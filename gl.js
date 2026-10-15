@@ -62,23 +62,47 @@ void main(){ vec3 s=vec3(0.0); float ws=0.0; float k=-1.0/(2.0*max(sigma*sigma,1
 const FS_SOFT = HEAD + `uniform sampler2D A; uniform sampler2D B; uniform float m;
 void main(){ o=vec4(mix(texture(A,uv).rgb,texture(B,uv).rgb,m),1.0); }`;
 
-const FS_FINAL = HEAD + `uniform sampler2D A; uniform sampler2D Bl; uniform sampler2D O; uniform vec2 res;
-uniform float sharp,ca,iso,chroma,strength,k,flipY; uniform uint seed; uniform int bypass;
+const FS_FINAL = HEAD + `uniform sampler2D A; uniform sampler2D Bl; uniform sampler2D O; uniform sampler2D St; uniform vec2 res;
+uniform float sharp,ca,iso,chroma,strength,k,flipY,gsize; uniform uint seed; uniform int bypass, gtype, hasSt; uniform vec2 pixN; uniform vec4 stRect;
 uint h3(uvec3 v){ v=v*1664525u+1013904223u; v.x+=v.y*v.z; v.y+=v.z*v.x; v.z+=v.x*v.y; v^=v>>16u; v.x+=v.y*v.z; v.y+=v.z*v.x; v.z+=v.x*v.y; return v.x; }
 float gn(ivec2 p, uint s){ uint a=h3(uvec3(uvec2(p+ivec2(32768)), s+seed)); float u=float(a&255u)+float((a>>8)&255u)+float((a>>16)&255u)+float(a>>24); return (u/255.0-2.0)*1.732; }
+float gf(ivec2 p, uint s){ uint a=h3(uvec3(uvec2(p+ivec2(32768)), s)); float u=float(a&255u)+float((a>>8)&255u)+float((a>>16)&255u)+float(a>>24); return (u/255.0-2.0)*1.732; }
 float vn(vec2 x, uint s){ vec2 i=floor(x), f=fract(x); f=f*f*(3.0-2.0*f); ivec2 p=ivec2(i);
   return mix(mix(gn(p,s),gn(p+ivec2(1,0),s),f.x),mix(gn(p+ivec2(0,1),s),gn(p+ivec2(1,1),s),f.x),f.y)*1.6; }
 vec3 shp(vec2 p){ vec3 a=texture(A,p).rgb; return a+(a-texture(Bl,p).rgb)*sharp; }
+vec3 shpPix(vec2 p, vec2 h){ return (shp(p+vec2(-h.x,-h.y))+shp(p+vec2(h.x,-h.y))+shp(p+vec2(-h.x,h.y))+shp(p+vec2(h.x,h.y)))*.25; }
 void main(){
   vec2 q=flipY>.5?vec2(uv.x,1.0-uv.y):uv;
   vec3 orig=texture(O,q).rgb;
   if(bypass==1){ o=vec4(orig,1.0); return; }
+  bool px=pixN.x>0.0; vec2 P, hb=vec2(0.0); float kk=k;
+  if(px){ vec2 cell=floor(q*pixN); q=(cell+.5)/pixN; hb=.25/pixN; P=cell; kk=1.0; } else { P=q*res; }
   vec2 d=q-.5; float s=ca*.006;
-  vec3 c=vec3(shp(.5+d*(1.0-s)).r, shp(q).g, shp(.5+d*(1.0+s)).b);
-  vec2 P=q*res; float lum=clamp(dot(c,vec3(.299,.587,.114)),0.0,1.0), dk=1.0-lum;
-  if(iso>0.0){ float n = k<=1.05 ? gn(ivec2(P),1u) : vn(P/k,1u); c+=n*iso*(.012+.07*dk*sqrt(dk)); }
-  if(chroma>0.0){ float cell=5.0*max(k,.6); float cr=vn(P/cell,2u), cb=vn(P/cell,3u); float a=chroma*(.015+.12*dk*dk); c.r+=cr*a; c.b+=cb*a; c.g-=(cr+cb)*a*.35; }
-  o=vec4(clamp(mix(orig,c,strength),0.0,1.0),1.0);
+  vec3 c = px ? vec3(shpPix(.5+d*(1.0-s),hb).r, shpPix(q,hb).g, shpPix(.5+d*(1.0+s),hb).b)
+              : vec3(shp(.5+d*(1.0-s)).r, shp(q).g, shp(.5+d*(1.0+s)).b);
+  float lum=clamp(dot(c,vec3(.299,.587,.114)),0.0,1.0), dk=1.0-lum;
+  float gs=.6+gsize*1.8;
+  if(iso>0.0){
+    if(gtype==1){ // film: clumpy, mono, strongest in midtones
+      float kc=max(1.0,kk)*gs; float n=vn(P/kc,1u)*.55+vn(P/(kc*2.3),4u)*.35+gn(ivec2(P),5u)*.22;
+      float w=.25+2.8*lum*(1.0-lum); c+=n*iso*.075*w; c*= 1.0+n*iso*.02;
+    } else if(gtype==2){ // sensor grid: visible pixel cells, column/row banding, RGB mosaic tint
+      float cs=max(2.0,kk*2.0*gs); vec2 f=fract(P/cs); ivec2 ci=ivec2(floor(P/cs));
+      float edge=min(min(f.x,1.0-f.x),min(f.y,1.0-f.y)); float g=smoothstep(0.0,.18,edge);
+      c*=mix(1.0,.55+.45*g,min(1.0,iso*1.1));
+      int par=(ci.x&1)+2*(ci.y&1); vec3 tint= par==0?vec3(1.06,.97,.97): par==3?vec3(.97,.97,1.07): vec3(.97,1.05,.97);
+      c*=mix(vec3(1.0),tint,iso);
+      c+=gf(ivec2(ci.x,0),7u)*iso*.025 + gf(ivec2(0,ci.y),8u)*iso*.012;
+      c+=gn(ivec2(P),1u)*iso*(.01+.04*dk);
+    } else { // CCD digital noise
+      float kc=max(1.0,kk)*gs; float n = kc<=1.05 ? gn(ivec2(P),1u) : vn(P/kc,1u); c+=n*iso*(.012+.07*dk*sqrt(dk));
+    }
+  }
+  if(chroma>0.0){ float cell=5.0*max(kk,.6)*gs; float cr=vn(P/cell,2u), cb=vn(P/cell,3u); float a=chroma*(.015+.12*dk*dk); c.r+=cr*a; c.b+=cb*a; c.g-=(cr+cb)*a*.35; }
+  c=mix(orig,c,strength);
+  if(hasSt==1){ vec2 qq=flipY>.5?vec2(uv.x,1.0-uv.y):uv; vec2 sq=(qq-stRect.xy)/(stRect.zw-stRect.xy);
+    if(sq.x>=0.0&&sq.y>=0.0&&sq.x<=1.0&&sq.y<=1.0){ vec4 t=texture(St,sq); c=c*(1.0-t.a)+t.rgb; } }
+  o=vec4(clamp(c,0.0,1.0),1.0);
 }`;
 
 function Engine(canvas){
@@ -107,6 +131,27 @@ function Engine(canvas){
   function smallPair(s,f){ let p=s.small.get(f); if(!p){ const w=Math.max(1,Math.ceil(s.w/f)), h=Math.max(1,Math.ceil(s.h/f)); p=[mkTex(w,h),mkTex(w,h)]; s.small.set(f,p); } return p; }
 
   let src=null, srcW=0, srcH=0;
+  const stamp={tex:null, aspect:1, text:null};
+  function setStamp(text){
+    if(text===stamp.text) return; stamp.text=text;
+    if(!text){ return; }
+    const fs=96, c=document.createElement('canvas'), g=c.getContext('2d');
+    const font='bold '+fs+'px "Courier New", ui-monospace, Menlo, monospace';
+    g.font=font; const tw=Math.ceil(g.measureText(text).width);
+    c.width=tw+fs; c.height=Math.ceil(fs*1.5);
+    g.font=font; g.textBaseline='middle'; g.textAlign='center';
+    g.shadowColor='rgba(255,90,0,.9)'; g.shadowBlur=fs*.28; g.fillStyle='rgba(255,120,30,.95)';
+    g.fillText(text,c.width/2,c.height/2+fs*.05); g.shadowBlur=fs*.08; g.fillStyle='rgba(255,196,120,1)'; g.fillText(text,c.width/2,c.height/2+fs*.05);
+    // premultiply for (1-a)+rgb blending
+    const id=g.getImageData(0,0,c.width,c.height), d=id.data; for(let i=0;i<d.length;i+=4){ const a=d[i+3]/255*0.92; d[i]=d[i]*a; d[i+1]=d[i+1]*a; d[i+2]=d[i+2]*a; d[i+3]=a*255; }
+    if(!stamp.tex) stamp.tex=gl.createTexture();
+    gl.bindTexture(gl.TEXTURE_2D,stamp.tex); gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL,true);
+    gl.texImage2D(gl.TEXTURE_2D,0,gl.RGBA8,c.width,c.height,0,gl.RGBA,gl.UNSIGNED_BYTE,new Uint8Array(d.buffer));
+    gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL,false);
+    gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_MIN_FILTER,gl.LINEAR); gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_MAG_FILTER,gl.LINEAR);
+    gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_WRAP_S,gl.CLAMP_TO_EDGE); gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_WRAP_T,gl.CLAMP_TO_EDGE);
+    stamp.aspect=c.width/c.height;
+  }
   function setSource(img, opt){ const mip=!(opt&&opt.live);
     const w=img.videoWidth||img.width, h=img.videoHeight||img.height;
     if(!src){ src=gl.createTexture(); }
@@ -158,14 +203,19 @@ function Engine(canvas){
     const rU=Math.max(.5,1.6*k), sigU=Math.max(.45,Math.sqrt(rU*(rU+1)/3));
     const Bu = blur(s,T3,sigU,T1,T2);
     target = out.toScreen?null:T1;
-    pass(progs.final,target,{A:T3.t,Bl:Bu.t,O:T0.t},p=>{ const f=(n,v)=>gl.uniform1f(U(p,n),v);
+    const stOn = !!(P.date && stamp.tex);
+    pass(progs.final,target,{A:T3.t,Bl:Bu.t,O:T0.t,St:stOn?stamp.tex:T0.t},p=>{ const f=(n,v)=>gl.uniform1f(U(p,n),v);
       gl.uniform1i(U(p,'bypass'),0); gl.uniform2f(U(p,'res'),w,h); f('sharp',P.sharp*1.6); f('ca',P.ca); f('iso',P.iso); f('chroma',P.chroma);
-      f('strength',P.strength==null?1:P.strength); f('k',k); f('flipY',out.flip?1:0); gl.uniform1ui(U(p,'seed'),(P.seed||7)>>>0); });
+      f('strength',P.strength==null?1:P.strength); f('k',k); f('flipY',out.flip?1:0); gl.uniform1ui(U(p,'seed'),(P.seed||7)>>>0);
+      f('gsize',P.gsize==null?.3:P.gsize); gl.uniform1i(U(p,'gtype'),P.gtype|0);
+      const pn=P.pix|0; if(pn>0){ const L=Math.max(w,h); gl.uniform2f(U(p,'pixN'),Math.round(pn*w/L),Math.round(pn*h/L)); } else gl.uniform2f(U(p,'pixN'),0,0);
+      gl.uniform1i(U(p,'hasSt'),stOn?1:0);
+      if(stOn){ const m=Math.min(w,h), hh=0.055*m, ww=hh*stamp.aspect, mx=0.05*m; gl.uniform4f(U(p,'stRect'),1-(mx+ww)/w, mx/h, 1-mx/w, (mx+hh)/h); } });
     return target;
   }
   function read(target){ const px=new Uint8Array(target.w*target.h*4); gl.bindFramebuffer(gl.FRAMEBUFFER,target.fb); gl.readPixels(0,0,target.w,target.h,gl.RGBA,gl.UNSIGNED_BYTE,px); return px; }
   function trim(keepKeys){ for(const [key,s] of sets){ if(!keepKeys.includes(key)){ s.T.forEach(freeTex); s.small.forEach(p=>p.forEach(freeTex)); sets.delete(key); } } }
-  return {gl, maxTex, setSource, render, read, trim, dropSet, get srcW(){return srcW;}, get srcH(){return srcH;}};
+  return {gl, maxTex, setSource, setStamp, render, read, trim, dropSet, get srcW(){return srcW;}, get srcH(){return srcH;}};
 }
 
 /* crop → affine map from output (u, v-down) to source uv, plus crop size in source px */

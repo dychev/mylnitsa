@@ -14,252 +14,206 @@
 <link rel="apple-touch-icon" href="icon-180.png">
 <link rel="icon" href="icon-192.png">
 <style>
-
-/* Layout: iOS Settings — large title, photo card, segmented control, inset grouped lists. Fullscreen = black editor with the same controls docked at the bottom */
+/* Mylnitsa v3 — Photos-editor style: black canvas, photo first, controls in a compact bottom stack */
 :root{
-  --bg:#f2f2f7; --card:#ffffff; --label:#000000; --secondary:rgba(60,60,67,.6); --tertiary:rgba(60,60,67,.3);
-  --sep:rgba(60,60,67,.29); --tint:#007aff; --fill:rgba(118,118,128,.12); --segsel:#ffffff; --red:#ff3b30; --track:rgba(120,120,128,.2);
-  --photo-bg:#e5e5ea;
+  --bg:#000; --panel:rgba(28,28,30,.92); --label:#fff; --sec:rgba(235,235,245,.6); --ter:rgba(235,235,245,.3);
+  --sep:rgba(84,84,88,.65); --yellow:#ffd60a; --tint:#0a84ff; --red:#ff453a; --fill:rgba(118,118,128,.24);
   --font:-apple-system,BlinkMacSystemFont,"SF Pro Text","SF Pro Display","Helvetica Neue",system-ui,"Segoe UI",Roboto,Arial,sans-serif;
+  color-scheme:dark;
 }
-@media (prefers-color-scheme: dark){:root:not([data-theme="light"]){
-  --bg:#000000; --card:#1c1c1e; --label:#ffffff; --secondary:rgba(235,235,245,.6); --tertiary:rgba(235,235,245,.3);
-  --sep:rgba(84,84,88,.65); --tint:#0a84ff; --fill:rgba(118,118,128,.24); --segsel:#636366; --red:#ff453a; --track:rgba(120,120,128,.36); --photo-bg:#1c1c1e; color-scheme:dark}}
-:root[data-theme="dark"]{
-  --bg:#000000; --card:#1c1c1e; --label:#ffffff; --secondary:rgba(235,235,245,.6); --tertiary:rgba(235,235,245,.3);
-  --sep:rgba(84,84,88,.65); --tint:#0a84ff; --fill:rgba(118,118,128,.24); --segsel:#636366; --red:#ff453a; --track:rgba(120,120,128,.36); --photo-bg:#1c1c1e; color-scheme:dark}
-body.fs{
-  --bg:#000000; --card:rgba(28,28,30,.92); --label:#ffffff; --secondary:rgba(235,235,245,.6); --tertiary:rgba(235,235,245,.3);
-  --sep:rgba(84,84,88,.65); --tint:#0a84ff; --fill:rgba(118,118,128,.24); --segsel:#636366; --red:#ff453a; --track:rgba(120,120,128,.36); --photo-bg:#000; color-scheme:dark}
 *{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
 [hidden]{display:none!important}
-body{background:var(--bg);color:var(--label);font:17px/1.29 var(--font);letter-spacing:-.01em;padding-inline:16px;padding-block:0 40px;-webkit-font-smoothing:antialiased}
+html,body{height:100%;margin:0;background:var(--bg);overflow:hidden;overscroll-behavior:none}
+body{color:var(--label);font:15px/1.3 var(--font);-webkit-font-smoothing:antialiased;-webkit-user-select:none;user-select:none;-webkit-touch-callout:none}
 button{font:inherit;color:inherit;background:none;border:0;padding:0;cursor:pointer}
-button:focus-visible,label:focus-within,input:focus-visible{outline:2px solid var(--tint);outline-offset:2px;border-radius:8px}
+button:focus-visible{outline:2px solid var(--tint);outline-offset:2px;border-radius:8px}
 
-.app{max-width:1200px;margin:0 auto}
-.nav{position:sticky;top:env(safe-area-inset-top,0px);z-index:5;display:grid;grid-template-columns:1fr auto 1fr;align-items:center;height:44px;margin-inline:-16px;padding-inline:16px;background:color-mix(in srgb,var(--bg) 85%,transparent);-webkit-backdrop-filter:saturate(180%) blur(20px);backdrop-filter:saturate(180%) blur(20px)}
-.navbtn{color:var(--tint);font-size:17px;display:inline-flex;align-items:center;gap:4px;position:relative;cursor:pointer;justify-self:start}
-.navbtn.r{justify-self:end;font-weight:600}
-.navbtn:disabled{color:var(--tertiary)}
-.navbtn input{position:absolute;width:1px;height:1px;opacity:0;pointer-events:none}
-.navtitle{font-weight:600;font-size:17px;opacity:0;transition:opacity .2s}
-body.fs .navtitle{opacity:1}
-h1.large{font-size:34px;line-height:41px;font-weight:700;letter-spacing:.01em;margin:2px 0 10px}
+.app{position:fixed;inset:0;display:flex;flex-direction:column;padding-top:env(safe-area-inset-top,0px);padding-left:env(safe-area-inset-left,0px);padding-right:env(safe-area-inset-right,0px)}
+.top{flex:0 0 auto;height:48px;display:grid;grid-template-columns:1fr auto 1fr;align-items:center;padding:0 14px;position:relative;z-index:4}
+.top .l{justify-self:start;display:flex;gap:16px;align-items:center}
+.top .r{justify-self:end;display:flex;gap:16px;align-items:center}
+.tbtn{display:inline-flex;align-items:center;gap:6px;font-size:17px;color:var(--label);height:44px}
+.tbtn svg{width:22px;height:22px}
+.tbtn.y{color:var(--yellow);font-weight:600}
+.pill{height:30px;padding:0 12px;border-radius:999px;background:var(--fill);font-size:14px;font-weight:600;display:inline-flex;align-items:center;gap:6px}
+.pill svg{width:16px;height:16px}
+.ico{width:36px;height:36px;border-radius:50%;display:grid;place-items:center;color:var(--label)}
+.ico svg{width:22px;height:22px}
+.ico[aria-pressed="true"]{color:var(--yellow)}
 
-.layout{display:grid;gap:18px;grid-template-columns:minmax(0,1fr)}
-@media (min-width:980px){.layout{grid-template-columns:minmax(0,1fr) 380px;align-items:start}.stagecol{position:sticky;top:calc(env(safe-area-inset-top,0px) + 52px)}}
-.stagecol,.ctl{display:grid;gap:12px;min-width:0;align-content:start}
-
-.photo{position:relative;background:var(--photo-bg);border-radius:12px;overflow:hidden;display:grid;place-items:center;min-height:200px;touch-action:none;-webkit-user-select:none;user-select:none;-webkit-touch-callout:none}
-.photo.drag{outline:2px dashed var(--tint);outline-offset:-6px}
+.stage{flex:1 1 auto;min-height:0;position:relative;display:grid;place-items:center;overflow:hidden;touch-action:none}
+body.cam .stage{place-items:start center}
 .frame{position:relative;line-height:0}
-#view{display:block;max-width:100%}
+#view{display:block}
+#view.mirror{transform:scaleX(-1)}
 .grid{position:absolute;inset:0;pointer-events:none;background:
-  linear-gradient(to right,transparent calc(33.33% - .5px),rgba(255,255,255,.55) calc(33.33% - .5px),rgba(255,255,255,.55) calc(33.33% + .5px),transparent calc(33.33% + .5px),transparent calc(66.66% - .5px),rgba(255,255,255,.55) calc(66.66% - .5px),rgba(255,255,255,.55) calc(66.66% + .5px),transparent calc(66.66% + .5px)),
-  linear-gradient(to bottom,transparent calc(33.33% - .5px),rgba(255,255,255,.55) calc(33.33% - .5px),rgba(255,255,255,.55) calc(33.33% + .5px),transparent calc(33.33% + .5px),transparent calc(66.66% - .5px),rgba(255,255,255,.55) calc(66.66% - .5px),rgba(255,255,255,.55) calc(66.66% + .5px),transparent calc(66.66% + .5px));
-  box-shadow:inset 0 0 0 1.5px rgba(255,255,255,.9)}
+  linear-gradient(to right,transparent calc(33.33% - .5px),rgba(255,255,255,.45) calc(33.33% - .5px),rgba(255,255,255,.45) calc(33.33% + .5px),transparent calc(33.33% + .5px),transparent calc(66.66% - .5px),rgba(255,255,255,.45) calc(66.66% - .5px),rgba(255,255,255,.45) calc(66.66% + .5px),transparent calc(66.66% + .5px)),
+  linear-gradient(to bottom,transparent calc(33.33% - .5px),rgba(255,255,255,.45) calc(33.33% - .5px),rgba(255,255,255,.45) calc(33.33% + .5px),transparent calc(33.33% + .5px),transparent calc(66.66% - .5px),rgba(255,255,255,.45) calc(66.66% - .5px),rgba(255,255,255,.45) calc(66.66% + .5px),transparent calc(66.66% + .5px));
+  box-shadow:inset 0 0 0 1.5px rgba(255,255,255,.85)}
 .marker{position:absolute;width:30px;height:30px;margin:-15px 0 0 -15px;border-radius:50%;border:2px solid #fff;box-shadow:0 0 0 1px rgba(0,0,0,.35),0 1px 6px rgba(0,0,0,.4);pointer-events:none;display:grid;place-items:center}
 .marker svg{width:14px;height:14px}
-.badge{position:absolute;top:10px;left:50%;transform:translateX(-50%);background:rgba(0,0,0,.55);-webkit-backdrop-filter:blur(10px);backdrop-filter:blur(10px);color:#fff;font-size:13px;font-weight:600;line-height:1;padding:7px 11px;border-radius:999px;letter-spacing:0}
-.fsbtn{position:absolute;right:10px;bottom:10px;width:36px;height:36px;border-radius:50%;background:rgba(0,0,0,.45);-webkit-backdrop-filter:blur(10px);backdrop-filter:blur(10px);display:grid;place-items:center;color:#fff}
-.fsbtn svg{width:18px;height:18px}
-.sample{position:absolute;left:10px;bottom:10px;background:rgba(0,0,0,.5);-webkit-backdrop-filter:blur(10px);backdrop-filter:blur(10px);color:#fff;font-size:13px;line-height:1.2;padding:7px 11px;border-radius:999px;pointer-events:none;max-width:calc(100% - 70px)}
-.foot{margin:0;padding-inline:16px;font-size:13px;line-height:18px;color:var(--secondary);font-variant-numeric:tabular-nums}
-
-.strip{display:flex;gap:6px;overflow-x:auto;padding:2px;-webkit-overflow-scrolling:touch;scrollbar-width:none}
-.strip::-webkit-scrollbar{display:none}
-.ph{flex:0 0 auto;border-radius:8px;overflow:hidden;line-height:0;outline:2px solid transparent;outline-offset:1px}
-.ph canvas{height:54px;width:auto;display:block}
-.ph[aria-pressed="true"]{outline-color:var(--tint)}
-
-.seg{display:grid;grid-auto-flow:column;grid-auto-columns:1fr;background:var(--fill);border-radius:9px;padding:2px;gap:2px}
-.seg button{font-size:13px;font-weight:500;line-height:1;padding:8px 4px;border-radius:7px;text-align:center;white-space:nowrap}
-.seg button[aria-selected="true"],.seg button[aria-pressed="true"]{background:var(--segsel);font-weight:600;box-shadow:0 3px 8px rgba(0,0,0,.12),0 3px 1px rgba(0,0,0,.04)}
-.pane{display:grid;gap:22px}
-.group{display:grid;gap:7px}
-.gh{margin:0;padding-inline:16px;font-size:13px;line-height:18px;font-weight:400;text-transform:uppercase;letter-spacing:.02em;color:var(--secondary)}
-.gf{margin:0;padding-inline:16px;font-size:13px;line-height:18px;color:var(--secondary)}
-.card{background:var(--card);border-radius:10px;overflow:hidden}
-.row{position:relative;padding:11px 16px;display:grid;gap:8px;min-height:44px;align-content:center}
-.row+.row::before{content:"";position:absolute;top:0;left:16px;right:0;height:.5px;background:var(--sep)}
-.rh{display:flex;justify-content:space-between;align-items:baseline;gap:12px}
-.rh label,.rh span:first-child{min-width:0}
-.rv{color:var(--secondary);font-variant-numeric:tabular-nums;white-space:nowrap}
-.rowbtn{color:var(--tint);text-align:left;width:100%}
-.rowbtn.red{color:var(--red)}
-.rowlink{display:flex;justify-content:space-between;align-items:center;gap:10px;width:100%;text-align:left}
-.rowlink small{color:var(--secondary);font-size:15px}
-input[type=range]{-webkit-appearance:none;appearance:none;width:100%;height:28px;background:transparent;margin:0;--p:50%}
-input[type=range]::-webkit-slider-runnable-track{height:4px;border-radius:2px;background:linear-gradient(to right,var(--tint) var(--p),var(--track) var(--p))}
-input[type=range]::-moz-range-track{height:4px;border-radius:2px;background:var(--track)}
-input[type=range]::-moz-range-progress{height:4px;border-radius:2px;background:var(--tint)}
-input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;width:28px;height:28px;border-radius:50%;background:#fff;margin-top:-12px;box-shadow:0 .5px 4px rgba(0,0,0,.12),0 6px 13px rgba(0,0,0,.12),0 0 0 .5px rgba(0,0,0,.04)}
-input[type=range]::-moz-range-thumb{width:28px;height:28px;border:0;border-radius:50%;background:#fff;box-shadow:0 .5px 4px rgba(0,0,0,.12),0 6px 13px rgba(0,0,0,.12)}
-input[type=range].center::-webkit-slider-runnable-track{background:var(--track)}
-input[type=text]{font:inherit;border:0;background:transparent;color:var(--label);width:100%;padding:0;min-width:0}
-input[type=text]::placeholder{color:var(--tertiary)}
-
-.presets{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px 10px}
-.pt{display:grid;gap:6px;justify-items:center;text-align:center}
-.pt canvas{width:100%;aspect-ratio:1/1;border-radius:10px;background:var(--fill);display:block;outline:2.5px solid transparent;outline-offset:2px}
-.pt span{font-size:12px;line-height:15px;color:var(--secondary)}
-.pt[aria-pressed="true"] canvas{outline-color:var(--tint)}
-.pt[aria-pressed="true"] span{color:var(--label);font-weight:600}
-.mine-del{color:var(--red);font-size:15px;flex:0 0 auto}
-.toast{margin:0;padding-inline:16px;font-size:13px;color:var(--secondary);min-height:18px}
-
-/* fullscreen editor */
-body.fs{overflow:hidden;padding:0}
-body.fs .app{position:fixed;inset:0;max-width:none;display:grid;grid-template-rows:auto minmax(0,1fr) auto;background:#000;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}
-body.fs .nav{position:static;margin:0;background:#000;color:#fff}
-body.fs h1.large{display:none}
-body.fs .layout{display:contents}
-body.fs .stagecol{display:grid;grid-template-rows:minmax(0,1fr) auto;gap:6px;min-height:0;position:static;padding-inline:0}
-body.fs .photo{border-radius:0;background:#000;min-height:0;height:100%}
-body.fs .foot,body.fs .strip,body.fs .sample,body.fs .fsbtn{display:none}
-body.fs .ctl{max-height:44vh;overflow-y:auto;padding:10px 12px 14px;background:#000;gap:10px;-webkit-overflow-scrolling:touch}
-body.fs .presets{display:flex;overflow-x:auto;gap:8px;scrollbar-width:none}
-body.fs .presets::-webkit-scrollbar{display:none}
-body.fs .pt{flex:0 0 72px}
-body.fs .pane{gap:14px}
-@media (min-width:980px){ body.fs .app{grid-template-columns:minmax(0,1fr) 380px;grid-template-rows:auto minmax(0,1fr)}
-  body.fs .nav{grid-column:1/-1} body.fs .ctl{max-height:none;height:100%;grid-row:2;grid-column:2} body.fs .stagecol{grid-row:2;grid-column:1} }
-@media (prefers-reduced-motion:reduce){*{transition:none!important}}
-
-/* ---- PWA additions: safe areas, camera, album, sheet ---- */
-html{background:var(--bg)}
-body{padding-top:env(safe-area-inset-top,0px);padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px))}
-body.fs{padding:0}
-.navbtn svg{width:22px;height:22px}
-.navl{display:flex;gap:18px;align-items:center;justify-self:start}
-.navr{display:flex;gap:18px;align-items:center;justify-self:end}
-
-.album{display:flex;gap:6px;overflow-x:auto;padding:2px;scrollbar-width:none}
-.album::-webkit-scrollbar{display:none}
-.album .ph canvas,.album .ph img{height:54px;width:54px;object-fit:cover;display:block}
-.album .add{flex:0 0 54px;height:54px;border-radius:8px;background:var(--fill);color:var(--tint);display:grid;place-items:center;font-size:28px;line-height:1}
-
-/* camera mode */
-.cambar{display:none}
-body.cam .cambar{display:grid;grid-template-columns:1fr auto 1fr;align-items:center;padding:8px 24px 6px;background:#000}
-body.cam #p-crop .group:not(:first-child), body.cam .toast, body.cam #p-pre .group{display:none}
-body.cam #fsbtn, body.cam .foot, body.cam .album{display:none}
-.shutter{width:72px;height:72px;border-radius:50%;border:4px solid #fff;display:grid;place-items:center}
-.shutter i{width:58px;height:58px;border-radius:50%;background:#fff;transition:transform .12s}
-.shutter:active i{transform:scale(.9)}
-.lastshot{width:48px;height:48px;border-radius:8px;overflow:hidden;background:#2c2c2e;justify-self:start}
-.lastshot canvas,.lastshot img{width:100%;height:100%;object-fit:cover;display:block}
-.camright{justify-self:end;display:flex;gap:14px;align-items:center}
-.roundbtn{width:44px;height:44px;border-radius:50%;background:rgba(255,255,255,.14);color:#fff;display:grid;place-items:center}
-.roundbtn svg{width:22px;height:22px}
-.lenses{position:absolute;bottom:12px;left:50%;transform:translateX(-50%);display:flex;gap:6px;background:rgba(0,0,0,.35);padding:4px;border-radius:999px}
-.lenses button{min-width:38px;height:38px;border-radius:50%;background:rgba(0,0,0,.4);color:#fff;font-size:13px;font-weight:600}
-.lenses button[aria-pressed="true"]{color:#ffd60a;font-size:14px}
-#view.mirror{transform:scaleX(-1)}
-.flashfx{position:fixed;inset:0;background:#fff;opacity:0;pointer-events:none;transition:opacity .25s;z-index:20}
-.flashfx.on{opacity:.85;transition:none}
-.shotmsg{position:absolute;top:10px;left:50%;transform:translateX(-50%);display:flex;gap:10px;align-items:center;background:rgba(0,0,0,.6);-webkit-backdrop-filter:blur(12px);backdrop-filter:blur(12px);color:#fff;font-size:14px;padding:6px 6px 6px 14px;border-radius:999px;white-space:nowrap}
+.badge{position:absolute;top:10px;left:50%;transform:translateX(-50%);background:rgba(0,0,0,.55);-webkit-backdrop-filter:blur(10px);backdrop-filter:blur(10px);color:#fff;font-size:13px;font-weight:600;line-height:1;padding:7px 11px;border-radius:999px;white-space:nowrap;z-index:3}
+.fname{position:absolute;left:50%;top:42%;transform:translate(-50%,-50%);font-size:28px;font-weight:700;letter-spacing:.01em;color:#fff;text-shadow:0 2px 14px rgba(0,0,0,.6);pointer-events:none;opacity:0;transition:opacity .35s;white-space:nowrap}
+.fname.on{opacity:1;transition:none}
+.shotmsg{position:absolute;top:10px;left:50%;transform:translateX(-50%);display:flex;gap:10px;align-items:center;background:rgba(0,0,0,.6);-webkit-backdrop-filter:blur(12px);backdrop-filter:blur(12px);color:#fff;font-size:14px;padding:6px 6px 6px 14px;border-radius:999px;white-space:nowrap;z-index:3}
 .shotmsg button{background:#fff;color:#000;font-weight:600;font-size:14px;padding:7px 12px;border-radius:999px}
+.lenses{position:absolute;left:50%;transform:translateX(-50%);display:flex;gap:6px;background:rgba(0,0,0,.35);padding:4px;border-radius:999px;z-index:2}
+.lenses button{min-width:36px;height:36px;border-radius:50%;background:rgba(0,0,0,.45);color:#fff;font-size:12px;font-weight:600}
+.lenses button[aria-pressed="true"]{color:var(--yellow);font-size:13px}
+.sample{position:absolute;bottom:10px;left:50%;transform:translateX(-50%);background:rgba(0,0,0,.5);-webkit-backdrop-filter:blur(10px);backdrop-filter:blur(10px);color:#fff;font-size:13px;line-height:1.2;padding:7px 12px;border-radius:999px;pointer-events:none;white-space:nowrap}
+
+/* bottom stack */
+.bottom{flex:0 0 auto;position:relative;z-index:3;padding-bottom:calc(env(safe-area-inset-bottom,0px) + 4px);width:100%;max-width:680px;margin:0 auto}
+.adjust{display:grid;gap:4px;padding-top:6px}
+body.cam .adjust{position:absolute;left:0;right:0;bottom:100%;background:linear-gradient(to top,rgba(0,0,0,.72),rgba(0,0,0,.5) 70%,rgba(0,0,0,0));padding:22px 0 6px}
+.readout{display:flex;justify-content:center;gap:8px;align-items:baseline;height:18px;font-size:12px;font-weight:600;letter-spacing:.06em;text-transform:uppercase;color:var(--sec)}
+.readout b{color:var(--label);font-weight:600;letter-spacing:0;font-variant-numeric:tabular-nums}
+.dial{position:relative;height:40px;touch-action:none;cursor:ew-resize}
+.dial canvas{width:100%;height:100%;display:block}
+.opts{display:flex;justify-content:center;gap:6px;height:40px;align-items:center;padding:0 12px;overflow-x:auto;scrollbar-width:none}
+.opts::-webkit-scrollbar{display:none}
+.opts button{height:30px;padding:0 13px;border-radius:999px;background:var(--fill);font-size:13px;font-weight:600;white-space:nowrap;color:var(--sec)}
+.opts button[aria-pressed="true"]{background:#fff;color:#000}
+.row{display:flex;gap:10px;overflow-x:auto;scroll-snap-type:x proximity;padding:6px 16px 4px;scrollbar-width:none;-webkit-overflow-scrolling:touch}
+.row::-webkit-scrollbar{display:none}
+.it{flex:0 0 auto;width:48px;display:grid;justify-items:center;gap:4px;scroll-snap-align:center}
+.it .ring{width:44px;height:44px;border-radius:50%;position:relative;display:grid;place-items:center;color:var(--sec)}
+.it .ring::before{content:"";position:absolute;inset:0;border-radius:50%;background:conic-gradient(var(--yellow) calc(var(--v,0)*1turn),rgba(255,255,255,.22) 0);
+  -webkit-mask:radial-gradient(farthest-side,transparent calc(100% - 2px),#000 calc(100% - 2px));mask:radial-gradient(farthest-side,transparent calc(100% - 2px),#000 calc(100% - 2px))}
+.it .ring.neg::before{background:conic-gradient(from calc(var(--v,0)*-1turn),var(--yellow) calc(var(--v,0)*1turn),rgba(255,255,255,.22) 0)}
+.it svg{width:20px;height:20px}
+.it span{font-size:10px;line-height:12px;color:var(--ter);white-space:nowrap}
+.it[aria-pressed="true"] .ring{color:#fff}
+.it[aria-pressed="true"] .ring::before{background:conic-gradient(var(--yellow) calc(var(--v,0)*1turn),rgba(255,255,255,.9) 0)}
+.it[aria-pressed="true"] span{color:#fff}
+.chip{flex:0 0 auto;height:32px;padding:0 14px;border-radius:999px;background:var(--fill);font-size:14px;font-weight:600;white-space:nowrap;color:var(--sec);scroll-snap-align:center;display:inline-flex;align-items:center;gap:6px}
+.chip svg{width:16px;height:16px}
+.chip[aria-pressed="true"]{background:#fff;color:#000}
+.tabs{display:grid;grid-template-columns:repeat(3,1fr);padding:4px 24px 0}
+.tab{display:grid;justify-items:center;gap:3px;padding:6px 0;color:var(--sec);font-size:11px;font-weight:500}
+.tab svg{width:24px;height:24px}
+.tab[aria-selected="true"]{color:var(--yellow)}
+.shoot{display:none}
+body.cam .shoot{display:grid;grid-template-columns:1fr auto 1fr;align-items:center;padding:10px 28px 6px}
+body.cam .tabs{display:none}
+.shutter{width:74px;height:74px;border-radius:50%;border:4px solid #fff;display:grid;place-items:center}
+.shutter i{width:60px;height:60px;border-radius:50%;background:#fff;transition:transform .12s}
+.shutter:active i{transform:scale(.9)}
+.last{width:46px;height:46px;border-radius:8px;overflow:hidden;background:#2c2c2e;justify-self:start}
+.last img{width:100%;height:100%;object-fit:cover;display:block}
+.hq{justify-self:end;width:46px;height:46px;border-radius:50%;background:rgba(255,255,255,.14);display:grid;place-items:center;color:#fff;font-size:12px;font-weight:700;letter-spacing:.02em}
+.flashfx{position:fixed;inset:0;background:#fff;opacity:0;pointer-events:none;transition:opacity .25s;z-index:20}
+.flashfx.on{opacity:.8;transition:none}
+.toast{position:absolute;left:50%;bottom:10px;transform:translateX(-50%);background:rgba(44,44,46,.92);color:#fff;font-size:13px;padding:8px 14px;border-radius:12px;max-width:calc(100% - 32px);text-align:center;z-index:5;pointer-events:none}
+
+/* album */
+.album{position:fixed;inset:0;z-index:10;background:#000;display:flex;flex-direction:column;padding-top:env(safe-area-inset-top,0px)}
+.album .top{flex:0 0 auto}
+.agrid{flex:1;overflow-y:auto;display:grid;grid-template-columns:repeat(auto-fill,minmax(110px,1fr));gap:2px;align-content:start;padding:2px 2px calc(env(safe-area-inset-bottom,0px) + 80px);-webkit-overflow-scrolling:touch}
+.cell{position:relative;aspect-ratio:1/1;background:#1c1c1e;overflow:hidden}
+.cell img{width:100%;height:100%;object-fit:cover;display:block}
+.cell.add{display:grid;place-items:center;color:var(--tint);font-size:15px;font-weight:600;gap:2px;text-align:center}
+.cell.add b{font-size:34px;line-height:1;font-weight:300}
+.cell .tick{position:absolute;right:6px;bottom:6px;width:22px;height:22px;border-radius:50%;border:1.5px solid #fff;background:rgba(0,0,0,.25)}
+.cell[aria-pressed="true"] .tick{background:var(--tint);border-color:#fff}
+.cell[aria-pressed="true"] .tick::after{content:"";position:absolute;left:6px;top:3px;width:6px;height:10px;border:solid #fff;border-width:0 2px 2px 0;transform:rotate(45deg)}
+.cell.cur::after{content:"";position:absolute;inset:0;box-shadow:inset 0 0 0 3px var(--yellow)}
+.abar{position:absolute;left:0;right:0;bottom:0;display:flex;justify-content:space-between;align-items:center;padding:10px 18px calc(env(safe-area-inset-bottom,0px) + 10px);background:rgba(18,18,18,.92);-webkit-backdrop-filter:blur(20px);backdrop-filter:blur(20px);font-size:16px}
+.abar .red{color:var(--red)} .abar .blue{color:var(--tint)}
+.abar button:disabled{opacity:.35}
+.aempty{grid-column:1/-1;color:var(--sec);padding:20px 16px;font-size:14px;text-align:center}
 
 /* action sheet */
-.sheet{position:fixed;inset:0;z-index:30;display:grid;align-items:end;background:rgba(0,0,0,.35);padding:0 8px calc(8px + env(safe-area-inset-bottom,0px))}
+.sheet{position:fixed;inset:0;z-index:30;display:grid;align-items:end;background:rgba(0,0,0,.4);padding:0 8px calc(8px + env(safe-area-inset-bottom,0px))}
 .sheet .box{max-width:560px;width:100%;margin:0 auto;display:grid;gap:8px}
-.sheet .grp{background:var(--card);border-radius:14px;overflow:hidden;-webkit-backdrop-filter:blur(30px);backdrop-filter:blur(30px)}
-body:not(.fs) .sheet .grp{background:color-mix(in srgb,var(--card) 92%,transparent)}
-.sheet .msg{padding:14px 16px;text-align:center;font-size:13px;color:var(--secondary);line-height:1.35}
+.sheet .grp{background:rgba(44,44,46,.96);border-radius:14px;overflow:hidden}
+.sheet .msg{padding:14px 16px;text-align:center;font-size:13px;color:var(--sec);line-height:1.35}
 .sheet .msg b{display:block;color:var(--label);font-size:15px;margin-bottom:3px;font-weight:600}
-.sheet .act{display:block;width:100%;padding:17px;text-align:center;font-size:20px;color:var(--tint);border-top:.5px solid var(--sep)}
+.sheet .act{display:block;width:100%;padding:17px;text-align:center;font-size:19px;color:var(--tint);border-top:.5px solid var(--sep)}
 .sheet .act.bold{font-weight:600}
 .sheet .act.red{color:var(--red)}
-.progress{height:4px;border-radius:2px;background:var(--track);overflow:hidden;margin:10px 16px 14px}
+.progress{height:4px;border-radius:2px;background:var(--fill);overflow:hidden;margin:10px 16px 14px}
 .progress i{display:block;height:100%;background:var(--tint);width:0;transition:width .2s}
+@media (prefers-reduced-motion:reduce){*{transition:none!important}}
 
 </style>
 </head>
 <body>
 <div class="app" id="app">
-  <header class="nav">
-    <div class="navl">
-      <button class="navbtn" id="openCam" type="button" aria-label="Камера"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round" aria-hidden="true"><path d="M3 8.5A1.5 1.5 0 0 1 4.5 7h2.6l1.6-2.2h6.6L16.9 7h2.6A1.5 1.5 0 0 1 21 8.5v9A1.5 1.5 0 0 1 19.5 19h-15A1.5 1.5 0 0 1 3 17.5z"/><circle cx="12" cy="12.8" r="3.6"/></svg>Камера</button>
-      <button class="navbtn" id="done" type="button" hidden>Готово</button>
-      <button class="navbtn" id="closeCam" type="button" hidden>Закрыть</button>
+  <header class="top" id="top">
+    <div class="l">
+      <button class="tbtn" id="openCam" type="button"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round" aria-hidden="true"><path d="M3 8.5A1.5 1.5 0 0 1 4.5 7h2.6l1.6-2.2h6.6L16.9 7h2.6A1.5 1.5 0 0 1 21 8.5v9A1.5 1.5 0 0 1 19.5 19h-15A1.5 1.5 0 0 1 3 17.5z"/><circle cx="12" cy="12.8" r="3.6"/></svg>Камера</button>
+      <button class="ico" id="closeCam" type="button" aria-label="Закрыть камеру" hidden><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M6 6l12 12M18 6 6 18"/></svg></button>
     </div>
-    <div class="navtitle" id="navTitle">Мыльница</div>
-    <div class="navr">
-      <button class="navbtn" id="flipCam" type="button" aria-label="Сменить камеру" hidden><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 9a8 8 0 0 1 14-3l2 2M20 4v4h-4M20 15a8 8 0 0 1-14 3l-2-2M4 20v-4h4"/></svg></button>
-      <button class="navbtn r" id="save" type="button">Сохранить</button>
+    <div class="c">
+      <button class="pill" id="openAlbum" type="button"><svg viewBox="0 0 16 16" fill="currentColor" aria-hidden="true"><rect x="1" y="1" width="6" height="6" rx="1.2"/><rect x="9" y="1" width="6" height="6" rx="1.2"/><rect x="1" y="9" width="6" height="6" rx="1.2"/><rect x="9" y="9" width="6" height="6" rx="1.2"/></svg><span id="albumCount">Альбом</span></button>
+      <div id="camToggles" hidden style="display:flex;gap:6px">
+        <button class="ico" id="tgDate" type="button" aria-label="Дата в углу" aria-pressed="false"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><rect x="3.5" y="5" width="17" height="15" rx="2.5"/><path d="M3.5 10h17M8 3v4M16 3v4"/></svg></button>
+        <button class="ico" id="tgFlash" type="button" aria-label="Вспышка" aria-pressed="false"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round" aria-hidden="true"><path d="M13 2 5 13h6l-1 9 8-11h-6z"/></svg></button>
+        <button class="ico" id="tgAdj" type="button" aria-label="Настройки" aria-pressed="false"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" aria-hidden="true"><path d="M4 7h10M18 7h2M4 17h4M12 17h8"/><circle cx="16" cy="7" r="2"/><circle cx="10" cy="17" r="2"/></svg></button>
+      </div>
+    </div>
+    <div class="r">
+      <button class="tbtn y" id="save" type="button">Сохранить</button>
+      <button class="ico" id="flipCam" type="button" aria-label="Сменить камеру" hidden><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 9a8 8 0 0 1 14-3l2 2M20 4v4h-4M20 15a8 8 0 0 1-14 3l-2-2M4 20v-4h4"/></svg></button>
     </div>
   </header>
-  <h1 class="large">Мыльница</h1>
 
-  <main class="layout">
-    <section class="stagecol">
-      <div class="photo" id="photo">
-        <div class="frame" id="frame">
-          <canvas id="view" width="1200" height="800" aria-label="Фото с эффектом. Удерживайте, чтобы увидеть оригинал"></canvas>
-          <div class="grid" id="grid" hidden></div>
-          <div class="marker" id="marker" hidden><svg viewBox="0 0 14 16" aria-hidden="true"><path d="M8 0 1 9h5l-1 7 8-10H8l1-6z" fill="#ffd60a"/></svg></div>
-        </div>
-        <div class="badge" id="badge" hidden>Оригинал</div>
-        <div class="shotmsg" id="shotmsg" hidden><span id="shottext">Снято</span><button type="button" id="shotSave">В Фото</button></div>
-        <div class="sample" id="sampleTag">Пример. Снимите или добавьте фото</div>
-        <div class="lenses" id="lenses" hidden></div>
-        <button class="fsbtn" id="fsbtn" type="button" aria-label="Редактировать на весь экран"><svg viewBox="0 0 18 18" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" aria-hidden="true"><path d="M11 2h5v5M7 16H2v-5M16 2l-5.5 5.5M2 16l5.5-5.5"/></svg></button>
-      </div>
-      <div class="cambar" id="cambar">
-        <button class="lastshot" id="lastShot" type="button" aria-label="Открыть последний снимок"></button>
-        <button class="shutter" id="shutter" type="button" aria-label="Снять"><i></i></button>
-        <div class="camright">
-          <label class="roundbtn" for="nativeCam" aria-label="Снять камерой iPhone в полном качестве"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round" aria-hidden="true"><path d="M3 8.5A1.5 1.5 0 0 1 4.5 7h2.6l1.6-2.2h6.6L16.9 7h2.6A1.5 1.5 0 0 1 21 8.5v9A1.5 1.5 0 0 1 19.5 19h-15A1.5 1.5 0 0 1 3 17.5z"/><text x="12" y="15.6" font-size="7" text-anchor="middle" fill="currentColor" stroke="none" font-family="-apple-system,system-ui,sans-serif" font-weight="700">HQ</text></svg><input id="nativeCam" type="file" accept="image/*" capture="environment" hidden></label>
-        </div>
-      </div>
-      <div class="album" id="album" aria-label="Альбом"></div>
-      <p class="foot" id="meta">Удерживайте фото, чтобы увидеть оригинал</p>
-    </section>
+  <div class="stage" id="stage">
+    <div class="frame" id="frame">
+      <canvas id="view" width="1200" height="800" aria-label="Фото с эффектом. Удерживайте, чтобы увидеть оригинал; проведите влево или вправо, чтобы сменить фильтр"></canvas>
+      <div class="grid" id="grid" hidden></div>
+      <div class="marker" id="marker" hidden><svg viewBox="0 0 14 16" aria-hidden="true"><path d="M8 0 1 9h5l-1 7 8-10H8l1-6z" fill="#ffd60a"/></svg></div>
+      <div class="lenses" id="lenses" hidden></div>
+    </div>
+    <div class="fname" id="fname"></div>
+    <div class="badge" id="badge" hidden>Оригинал</div>
+    <div class="shotmsg" id="shotmsg" hidden><span id="shottext">Снято</span><button type="button" id="shotSave">В Фото</button></div>
+    <div class="sample" id="sampleTag">Пример. Снимите или добавьте фото</div>
+    <div class="toast" id="toast" hidden role="status"></div>
+  </div>
 
-    <section class="ctl" id="ctl">
-      <div class="seg" role="tablist" aria-label="Разделы">
-        <button role="tab" id="t-pre" aria-selected="true" aria-controls="p-pre">Пресеты</button>
-        <button role="tab" id="t-adj" aria-selected="false" aria-controls="p-adj">Настройки</button>
-        <button role="tab" id="t-crop" aria-selected="false" aria-controls="p-crop">Кадр</button>
-      </div>
-      <div class="pane" id="p-pre" role="tabpanel">
-        <div class="presets" id="presets" role="group" aria-label="Пресеты"></div>
-        <div class="group">
-          <h3 class="gh">Мои пресеты</h3>
-          <div class="card" id="mine"></div>
-        </div>
-      </div>
-      <div class="pane" id="p-adj" role="tabpanel" hidden></div>
-      <div class="pane" id="p-crop" role="tabpanel" hidden>
-        <div class="group"><div class="seg" id="aspects" role="group" aria-label="Пропорции"></div></div>
-        <div class="group">
-          <div class="card">
-            <div class="row"><div class="rh"><label for="c-angle">Выпрямить</label><span class="rv" id="v-angle">0°</span></div><input type="range" class="center" id="c-angle" min="-15" max="15" step="0.1" value="0"></div>
-            <div class="row"><div class="rh"><label for="c-zoom">Масштаб</label><span class="rv" id="v-zoom">1,0×</span></div><input type="range" id="c-zoom" min="1" max="3" step="0.01" value="1"></div>
-          </div>
-          <p class="gf">Перетаскивайте фото пальцем, чтобы сдвинуть кадр.</p>
-        </div>
-        <div class="group">
-          <div class="card">
-            <div class="row"><button type="button" class="rowbtn" id="c-rot">Повернуть на 90°</button></div>
-            <div class="row"><button type="button" class="rowbtn red" id="c-reset">Сбросить кадр</button></div>
-          </div>
-        </div>
-      </div>
-      <p class="toast" id="toast" role="status"></p>
-    </section>
-  </main>
+  <div class="bottom" id="bottom">
+    <div class="adjust" id="adjust">
+      <div class="readout" id="readout"><span id="rLabel"></span><b id="rVal"></b></div>
+      <div class="dial" id="dial"><canvas id="dialC"></canvas></div>
+      <div class="opts" id="opts" hidden></div>
+      <div class="row" id="items" role="group"></div>
+    </div>
+    <div class="row" id="camFilters" hidden></div>
+    <div class="shoot">
+      <button class="last" id="lastShot" type="button" aria-label="Открыть альбом"></button>
+      <button class="shutter" id="shutter" type="button" aria-label="Снять"><i></i></button>
+      <label class="hq" for="nativeCam" aria-label="Снять камерой iPhone в полном качестве">HQ<input id="nativeCam" type="file" accept="image/*" capture="environment" hidden></label>
+    </div>
+    <nav class="tabs" role="tablist">
+      <button class="tab" role="tab" id="t-flt" aria-selected="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" aria-hidden="true"><circle cx="9" cy="9" r="5.5"/><circle cx="15" cy="9" r="5.5"/><circle cx="12" cy="14.5" r="5.5"/></svg>Фильтры</button>
+      <button class="tab" role="tab" id="t-adj" aria-selected="false"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" aria-hidden="true"><circle cx="12" cy="12" r="8.5"/><path d="M12 3.5v17M12 7.5h4M12 12h6M12 16.5h4"/></svg>Настройки</button>
+      <button class="tab" role="tab" id="t-crop" aria-selected="false"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" aria-hidden="true"><path d="M6 2v14a2 2 0 0 0 2 2h14M2 6h14a2 2 0 0 1 2 2v14"/></svg>Кадр</button>
+    </nav>
+  </div>
   <input id="file" type="file" accept="image/*,.heic,.heif" multiple hidden>
+</div>
+
+<div class="album" id="album" hidden>
+  <header class="top">
+    <div class="l"><button class="tbtn y" id="albumDone" type="button">Готово</button></div>
+    <div class="c" style="font-weight:600;font-size:17px">Альбом</div>
+    <div class="r"><button class="tbtn" id="albumSelect" type="button">Выбрать</button></div>
+  </header>
+  <div class="agrid" id="agrid"></div>
+  <div class="abar" id="abar" hidden>
+    <button type="button" class="blue" id="aApply">Применить настройки</button>
+    <button type="button" class="red" id="aDelete">Удалить</button>
+  </div>
 </div>
 <div class="flashfx" id="flashfx"></div>
 <div class="sheet" id="sheet" hidden><div class="box"><div class="grp" id="sheetMain"></div><div class="grp"><button type="button" class="act bold" id="sheetCancel">Отмена</button></div></div></div>
 
-<script src="util.js"></script>
-<script src="gl.js"></script>
-<script src="presets.js"></script>
-<script src="sample.js"></script>
-<script src="app.js"></script>
+<script src="util.js?v=3"></script>
+<script src="gl.js?v=3"></script>
+<script src="presets.js?v=3"></script>
+<script src="sample.js?v=3"></script>
+<script src="app.js?v=3"></script>
 </body>
 </html>
