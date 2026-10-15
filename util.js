@@ -36,13 +36,12 @@ function encodeJPEG(rgba,w,h,quality,sub,exif){
   [[0x00,DC_L_N,DC_L_V],[0x10,AC_L_N,AC_L_V],[0x01,DC_C_N,DC_C_V],[0x11,AC_C_N,AC_C_V]].forEach(([id,n,v])=>{ b8(id); n.forEach(b8); v.forEach(b8); });
   b16(0xFFDA); b16(12); b8(3); b8(1); b8(0x00); b8(2); b8(0x11); b8(3); b8(0x11); b8(0); b8(63); b8(0);
   // planes
-  const N=w*h, Y=new Float32Array(N), Cb=new Float32Array(N), Cr=new Float32Array(N);
-  for(let i=0,j=0;i<N;i++,j+=4){ const r=rgba[j],g=rgba[j+1],b=rgba[j+2];
-    Y[i]=0.299*r+0.587*g+0.114*b-128; Cb[i]=-0.168736*r-0.331264*g+0.5*b; Cr[i]=0.5*r-0.418688*g-0.081312*b; }
+  // colour conversion on the fly: no full-size float planes (saves ~150 MB on a 12 MP photo)
   const blk=new Float32Array(64), tmp=new Float32Array(64), out=new Int16Array(64);
-  const fetchY=(bx,by)=>{ for(let y=0;y<8;y++){ const yy=Math.min(h-1,by+y)*w; for(let x=0;x<8;x++) blk[y*8+x]=Y[yy+Math.min(w-1,bx+x)]; } };
-  const fetchC=(P,bx,by)=>{ for(let y=0;y<8;y++)for(let x=0;x<8;x++){ let s=0,n=0;
-      for(let dy=0;dy<vs;dy++)for(let dx=0;dx<hs;dx++){ const yy=Math.min(h-1,by+y*vs+dy), xx=Math.min(w-1,bx+x*hs+dx); s+=P[yy*w+xx]; n++; }
+  const fetchY=(bx,by)=>{ for(let y=0;y<8;y++){ const row=Math.min(h-1,by+y)*w; for(let x=0;x<8;x++){ const j=(row+Math.min(w-1,bx+x))*4; blk[y*8+x]=0.299*rgba[j]+0.587*rgba[j+1]+0.114*rgba[j+2]-128; } } };
+  const fetchC=(cr,bx,by)=>{ for(let y=0;y<8;y++)for(let x=0;x<8;x++){ let s=0,n=0;
+      for(let dy=0;dy<vs;dy++)for(let dx=0;dx<hs;dx++){ const yy=Math.min(h-1,by+y*vs+dy), xx=Math.min(w-1,bx+x*hs+dx), j=(yy*w+xx)*4;
+        s += cr ? 0.5*rgba[j]-0.418688*rgba[j+1]-0.081312*rgba[j+2] : -0.168736*rgba[j]-0.331264*rgba[j+1]+0.5*rgba[j+2]; n++; }
       blk[y*8+x]=s/n; } };
   const dct=q=>{ for(let u=0;u<8;u++)for(let x=0;x<8;x++){ let s=0; for(let y=0;y<8;y++) s+=COS[u*8+y]*blk[y*8+x]; tmp[u*8+x]=s; }
     for(let u=0;u<8;u++)for(let v=0;v<8;v++){ let s=0; for(let x=0;x<8;x++) s+=tmp[u*8+x]*COS[v*8+x]; out[u*8+v]=Math.round(s/q[u*8+v]); } };
@@ -59,8 +58,8 @@ function encodeJPEG(rgba,w,h,quality,sub,exif){
   let pY=0,pB=0,pR=0; const mw=8*hs, mh=8*vs;
   for(let my=0;my<h;my+=mh) for(let mx=0;mx<w;mx+=mw){
     for(let vy=0;vy<vs;vy++)for(let hx=0;hx<hs;hx++){ fetchY(mx+hx*8,my+vy*8); dct(ql); pY=emit(pY,HDCL,HACL); }
-    fetchC(Cb,mx,my); dct(qc); pB=emit(pB,HDCC,HACC);
-    fetchC(Cr,mx,my); dct(qc); pR=emit(pR,HDCC,HACC);
+    fetchC(false,mx,my); dct(qc); pB=emit(pB,HDCC,HACC);
+    fetchC(true,mx,my); dct(qc); pR=emit(pR,HDCC,HACC);
   }
   if(bitCnt>0) wbits((1<<(8-bitCnt))-1, 8-bitCnt);
   b16(0xFFD9);

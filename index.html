@@ -3,13 +3,13 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover,user-scalable=no">
-<title>Мыльница</title>
+<title>ph-y</title>
 <meta name="description" content="Эффект цифровых мыльниц 2000-х: съёмка с живым фильтром и обработка фото в полном разрешении.">
 <meta name="theme-color" content="#000000">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
-<meta name="apple-mobile-web-app-title" content="Мыльница">
+<meta name="apple-mobile-web-app-title" content="ph-y">
 <link rel="manifest" href="manifest.webmanifest">
 <link rel="apple-touch-icon" href="icon-180.png">
 <link rel="icon" href="icon-192.png">
@@ -151,6 +151,13 @@ body.edit .tabs{display:grid}
 .count{position:absolute;left:50%;top:40%;transform:translate(-50%,-50%);font-size:110px;font-weight:200;color:#fff;text-shadow:0 2px 20px rgba(0,0,0,.6);pointer-events:none}
 .lenses button.on{color:var(--yellow)}
 
+/* v5: exposure box, camera grid */
+.expo{position:absolute;width:0;height:0;pointer-events:none;z-index:3}
+.expo i{position:absolute;left:-38px;top:-38px;width:76px;height:76px;border:1.5px solid var(--yellow);border-radius:2px}
+.expo .sun{position:absolute;left:46px;top:-12px;display:flex;align-items:center;gap:3px;color:var(--yellow);font-size:13px;font-weight:600;white-space:nowrap}
+.expo .sun svg{width:18px;height:18px}
+.expo:not(.set) .sun b{display:none}
+
 </style>
 </head>
 <body>
@@ -168,6 +175,7 @@ body.edit .tabs{display:grid}
         <button class="ico" id="tgFlash" type="button" aria-label="Вспышка" aria-pressed="false"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round" aria-hidden="true"><path d="M13 2 5 13h6l-1 9 8-11h-6z"/></svg></button>
         <button class="ico" id="tgTimer" type="button" aria-label="Таймер" aria-pressed="false"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" aria-hidden="true"><circle cx="12" cy="13" r="8"/><path d="M12 9v4l2.5 2M9.5 2.5h5"/></svg><b id="timerVal" style="position:absolute;font-size:9px;margin:20px 0 0 20px"></b></button>
         <button class="ico" id="tgTap" type="button" aria-label="Снимать касанием кадра" aria-pressed="false"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 11V5.5a1.5 1.5 0 0 1 3 0V10m0-1a1.5 1.5 0 0 1 3 0v1.5m0-.5a1.5 1.5 0 0 1 3 0V15a6 6 0 0 1-6 6h-.5a6 6 0 0 1-4.6-2.2L4.6 15.6a1.5 1.5 0 0 1 2.3-1.9L9 16"/></svg></button>
+        <button class="ico" id="tgGrid" type="button" aria-label="Сетка" aria-pressed="false"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><rect x="3.5" y="3.5" width="17" height="17" rx="2.5"/><path d="M9.2 3.5v17M14.8 3.5v17M3.5 9.2h17M3.5 14.8h17"/></svg></button>
         <button class="ico" id="tgAdj" type="button" aria-label="Настройки" aria-pressed="false"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" aria-hidden="true"><path d="M4 7h10M18 7h2M4 17h4M12 17h8"/><circle cx="16" cy="7" r="2"/><circle cx="10" cy="17" r="2"/></svg></button>
       </div>
     </div>
@@ -188,9 +196,10 @@ body.edit .tabs{display:grid}
     <div class="fname" id="fname"></div>
     <div class="badge" id="badge" hidden>Оригинал</div>
     <div class="shotmsg" id="shotmsg" hidden><span id="shottext">Снято</span><button type="button" id="shotSave">В Фото</button></div>
-    <div class="sample" id="sampleTag">Пример. Снимите или добавьте фото</div>
+    <div class="sample" id="sampleTag">Пример</div>
     <div class="toast" id="toast" hidden role="status"></div>
     <div class="zoomv" id="zoomv" hidden></div>
+    <div class="expo" id="expo" hidden><i></i><span class="sun"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><circle cx="12" cy="12" r="4"/><path d="M12 2.5v2.5M12 19v2.5M2.5 12H5M19 12h2.5M5.3 5.3l1.8 1.8M16.9 16.9l1.8 1.8M5.3 18.7l1.8-1.8M16.9 7.1l1.8-1.8"/></svg><b id="expoV"></b></span></div>
     <div class="count" id="countdown" hidden></div>
   </div>
 
@@ -237,10 +246,10 @@ body.edit .tabs{display:grid}
 <div class="flashfx" id="flashfx"></div>
 <div class="sheet" id="sheet" hidden><div class="box"><div class="grp" id="sheetMain"></div><div class="grp"><button type="button" class="act bold" id="sheetCancel">Отмена</button></div></div></div>
 
-<script src="util.js?v=4"></script>
-<script src="gl.js?v=4"></script>
-<script src="presets.js?v=4"></script>
-<script src="sample.js?v=4"></script>
-<script src="app.js?v=4"></script>
+<script src="util.js?v=5"></script>
+<script src="gl.js?v=5"></script>
+<script src="presets.js?v=5"></script>
+<script src="sample.js?v=5"></script>
+<script src="app.js?v=5"></script>
 </body>
 </html>

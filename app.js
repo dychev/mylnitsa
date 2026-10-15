@@ -29,7 +29,7 @@ const MAX_SRC = Math.min(E.maxTex, 8192);
 const newCrop = () => ({rot:0, angle:0, aspect:null, zoom:1, ox:0, oy:0});
 const defP = () => ({...BASE, ...PRESETS[0].p, preset:PRESETS[0].id});
 let photos = [], cur = -1;
-const sample = {P:defP(), crop:newCrop(), name:'mylnitsa.jpg'};
+const sample = {P:defP(), crop:newCrop(), name:'ph-y.jpg'};
 const camState = {P:defP(), crop:{...newCrop(), aspect:4/3}};
 let mode = 'view', tab = 'flt', compare = false, loadedImg = null, adjOpen = false, sampleImg = null;
 const item = () => mode==='cam' ? camState : (cur>=0 ? photos[cur] : sample);
@@ -184,7 +184,7 @@ function refreshBottom(){
   }
   if (inCam) paintChips(camF);
   if (!$('#dial').hidden) drawDial();
-  $('#grid').hidden = !(t==='crop' && mode==='edit');
+  $('#grid').hidden = mode==='cam' ? !gridOn : !(t==='crop' && mode==='edit');
   updateMarker();
 }
 const ASPECTS = [[null,'Ориг.'],[4/3,'4:3'],[3/2,'3:2'],[1,'1:1'],[16/9,'16:9']];
@@ -244,8 +244,10 @@ async function decode(blob){
   if (isHeic(blob)) { await loadHeic(); const out = await window.heic2any({blob, toType:'image/png'}); return capImage(await createImageBitmap(Array.isArray(out)?out[0]:out)); }
   throw new Error('decode');
 }
-async function makeThumb(img){ const S=240, c=document.createElement('canvas'); c.width=S; c.height=S; const g=c.getContext('2d');
-  const w=img.width, h=img.height, m=Math.min(w,h); g.imageSmoothingQuality='high'; g.drawImage(img,(w-m)/2,(h-m)/2,m,m,0,0,S,S);
+async function makeThumb(img, rot){ const S=240, c=document.createElement('canvas'); c.width=S; c.height=S; const g=c.getContext('2d');
+  const w=img.width, h=img.height, m=Math.min(w,h); g.imageSmoothingQuality='high';
+  if (rot){ g.translate(S/2,S/2); g.rotate(rot*Math.PI/2); g.translate(-S/2,-S/2); }
+  g.drawImage(img,(w-m)/2,(h-m)/2,m,m,0,0,S,S);
   return new Promise(r => c.toBlob(b => r(b), 'image/jpeg', .82)); }
 function exifDate(seg){ try{ if(!seg) return null; const dv=new DataView(seg.buffer,seg.byteOffset,seg.byteLength), t=10, le=dv.getUint16(t)===0x4949;
   const u16=o=>dv.getUint16(t+o,le), u32=o=>dv.getUint32(t+o,le);
@@ -262,7 +264,7 @@ const stamp = d => { const p=n=>String(n).padStart(2,'0'); return `${d.getFullYe
 function updateCount(){ $('#albumCount').textContent = photos.length ? 'Альбом · '+photos.length : 'Альбом'; $('#sampleTag').hidden = true; }
 async function addItem({blob, name, exif, P:ip, crop:ic, img, taken}){
   const date = Date.now();
-  const it = {id:'p'+date+Math.random().toString(36).slice(2,7), name, date, taken: taken||null, blob, exif, crop: ic||newCrop(), P: ip||{...P()}, thumb: img?await makeThumb(img):null};
+  const it = {id:'p'+date+Math.random().toString(36).slice(2,7), name, date, taken: taken||null, blob, exif, crop: ic||newCrop(), P: ip||{...P()}, thumb: img?await makeThumb(img, (ic&&ic.rot)||0):null};
   photos.unshift(it); if (cur>=0) cur++;
   try { await DB.put(rec(it)); } catch(e){ toast('Не хватает места: фото не сохранено в альбоме приложения.'); }
   updateCount(); return it;
@@ -332,6 +334,7 @@ function setMode(m){
   $('#tgAdj').setAttribute('aria-pressed', adjOpen); $('#tgDate').setAttribute('aria-pressed', !!P().date); $('#tgFlash').setAttribute('aria-pressed', P().flash>.02);
   $('#tgTap').setAttribute('aria-pressed', tapShoot); $('#tgTimer').setAttribute('aria-pressed', timerSec>0); $('#timerVal').textContent = timerSec?timerSec:'';
   $('#lenses').hidden = !cam || !zoomChips.length;
+  $('#tgGrid').setAttribute('aria-pressed', gridOn); if (cam) $('#grid').hidden = !gridOn;
   updateCount(); updateViewerInfo(); builtTab=null; refreshBottom(); requestRender();
 }
 function updateViewerInfo(){ if (mode!=='view') return; const it = cur>=0?photos[cur]:null;
@@ -356,14 +359,14 @@ function previewSize(g){
   return {w:Math.max(2,Math.round(g.cw*s)), h:Math.max(2,Math.round(g.ch*s)), cssW:g.cw*Math.min(aw/g.cw, ah/g.ch)/dpr, cssH:g.ch*Math.min(aw/g.cw, ah/g.ch)/dpr};
 }
 function draw(){
-  if (!loadedImg && mode!=='cam') return;
+  if ((!loadedImg && mode!=='cam') || ctxLost) return;
   const c = mode==='cam' ? {...crop(), zoom: crop().zoom*digitalZoom} : crop();
   const g = GLE.cropGeom(E.srcW, E.srcH, c); lastGeom = g;
   const sz = previewSize(g);
   if (view.width!==sz.w || view.height!==sz.h){ view.width=sz.w; view.height=sz.h; }
   view.style.width = sz.cssW+'px'; view.style.height = sz.cssH+'px';
   E.setStamp(P().date ? stampText(mode==='cam'?null:item(), P().date) : null);
-  E.render(g, {...P(), seed: mode==='cam' ? (liveFrame*7919)>>>0 : 11}, {w:sz.w, h:sz.h, toScreen:true, bypass:compare});
+  E.render(g, {...P(), ev:(P().ev||0)+(mode==='cam'&&!hwExpo?camExpo:0), seed: mode==='cam' ? (liveFrame*7919)>>>0 : 11}, {w:sz.w, h:sz.h, toScreen:true, bypass:compare});
   E.trim([sz.w+'x'+sz.h]);
   updateMarker();
 }
@@ -376,13 +379,16 @@ const ptrs = new Map(); let down = null, holdT = 0, pinch = null;
 stageEl.addEventListener('pointerdown', e => { if (e.target.closest('button')) return; stageEl.setPointerCapture(e.pointerId); ptrs.set(e.pointerId,{x:e.clientX,y:e.clientY});
   if (ptrs.size===2 && mode==='cam'){ clearTimeout(holdT); const [a,b]=[...ptrs.values()]; pinch={d:Math.hypot(a.x-b.x,a.y-b.y), z:zoomLevel}; down=null; return; }
   if (ptrs.size>1) return;
-  down = {x:e.clientX, y:e.clientY, x0:e.clientX, y0:e.clientY, t:Date.now(), moved:false, held:false};
+  askMotion();
+  down = {x:e.clientX, y:e.clientY, x0:e.clientX, y0:e.clientY, t:Date.now(), moved:false, held:false, ev0:camExpo, evDrag:false};
   const cropMode = tab==='crop' && mode==='edit';
   if (!cropMode && mode!=='cam') holdT = setTimeout(() => { if (down && !down.moved){ down.held=true; compare=true; $('#badge').hidden=false; updateMarker(); requestRender(); } }, 220); });
 stageEl.addEventListener('pointermove', e => { if (!ptrs.has(e.pointerId)) return; ptrs.set(e.pointerId,{x:e.clientX,y:e.clientY});
   if (pinch && ptrs.size>=2){ const [a,b]=[...ptrs.values()]; const d=Math.hypot(a.x-b.x,a.y-b.y); setZoom(pinch.z*d/pinch.d, false); return; }
   if (!down) return; const dx=e.clientX-down.x, dy=e.clientY-down.y;
   if (Math.hypot(e.clientX-down.x0, e.clientY-down.y0)>8) { down.moved = true; clearTimeout(holdT); }
+  if (mode==='cam' && !tapShoot && down.moved && (down.evDrag || Math.abs(e.clientY-down.y0)>Math.abs(e.clientX-down.x0)*1.3)){
+    down.evDrag = true; setExpo(down.ev0 - (e.clientY-down.y0)/170, expoAt||{x:down.x0,y:down.y0}); return; }
   if (tab==='crop' && mode==='edit' && down.moved && lastGeom){ const r=view.getBoundingClientRect(), c=crop();
     const fx=dx*lastGeom.cw/r.width, fy=dy*lastGeom.ch/r.height, co=Math.cos(lastGeom.th), si=Math.sin(lastGeom.th);
     c.ox -= (co*fx-si*fy)/lastGeom.Sw; c.oy -= (si*fx+co*fy)/lastGeom.Sh; down.x=e.clientX; down.y=e.clientY; persist(item()); requestRender(); } });
@@ -390,11 +396,12 @@ function endPointer(e){ ptrs.delete(e.pointerId);
   if (pinch){ if (ptrs.size<2){ pinch=null; setZoom(zoomLevel, true); } return; }
   clearTimeout(holdT); if (!down) return; const d=down; down=null;
   if (d.held){ compare=false; $('#badge').hidden=true; updateMarker(); requestRender(); return; }
-  if (e.type!=='pointerup') return;
+  if (e.type!=='pointerup' || d.evDrag) return;
   const dx=e.clientX-d.x0, dy=e.clientY-d.y0, cropMode = tab==='crop' && mode==='edit';
   if (!cropMode && Math.abs(dx)>50 && Math.abs(dx)>Math.abs(dy)*1.5 && Date.now()-d.t<700){ if (mode==='view') stepPhoto(dx<0?1:-1); else stepFilter(dx<0?1:-1); return; }
   if (d.moved || cropMode) return;
   if (mode==='cam' && tapShoot){ shoot(); return; }
+  if (mode==='cam'){ const sr=stageEl.getBoundingClientRect(); expoAt={x:e.clientX,y:e.clientY}; setExpo(0, expoAt); }
   if (mode!=='view' && P().flash>.02){ const r=view.getBoundingClientRect(); let x=(e.clientX-r.left)/r.width; if(view.classList.contains('mirror')) x=1-x;
     if (x>=0&&x<=1){ P().fx=x; P().fy=Math.min(1,Math.max(0,(e.clientY-r.top)/r.height)); persist(item()); updateMarker(); requestRender(); } } }
 ['pointerup','pointercancel','lostpointercapture'].forEach(t => stageEl.addEventListener(t, endPointer));
@@ -405,9 +412,27 @@ function stepFilter(dir){ const i = PRESETS.findIndex(p=>p.id===P().preset); con
 /* ================= camera ================= */
 const video = document.createElement('video'); video.playsInline = true; video.muted = true; video.setAttribute('playsinline',''); video.setAttribute('muted','');
 let stream = null, camRaf = 0, facing = 'environment', multiCam = false, camPaused = false, tapShoot = false, timerSec = 0;
+let camExpo = 0, expoAt = null, hwExpo = null, gridOn = false, lastFrameT = 0, lastVT = -1;
 let hwZoom = null, zoomLevel = 1, digitalZoom = 1, lensList = [], lensId = null, zoomChips = [];
-try { const s = JSON.parse(localStorage.getItem('myl_cam')||'{}'); tapShoot=!!s.tap; timerSec=s.timer|0; } catch(_){}
-const saveCamPrefs = () => { try { localStorage.setItem('myl_cam', JSON.stringify({tap:tapShoot, timer:timerSec})); } catch(_){} };
+try { const s = JSON.parse(localStorage.getItem('myl_cam')||'{}'); tapShoot=!!s.tap; timerSec=s.timer|0; gridOn=!!s.grid; } catch(_){}
+const saveCamPrefs = () => { try { localStorage.setItem('myl_cam', JSON.stringify({tap:tapShoot, timer:timerSec, grid:gridOn})); } catch(_){} };
+/* exposure: tap a point, drag up/down — like the sun slider in the iPhone camera */
+function setExpo(v, at){
+  camExpo = Math.max(-2, Math.min(2, Math.round(v*20)/20));
+  if (hwExpo){ const hv=Math.max(hwExpo.min, Math.min(hwExpo.max, camExpo)); track().applyConstraints({advanced:[{exposureCompensation:hv}]}).catch(()=>{}); }
+  const el=$('#expo'); if (at){ const sr=stageEl.getBoundingClientRect(); el.style.left=(at.x-sr.left)+'px'; el.style.top=(at.y-sr.top)+'px'; }
+  $('#expoV').textContent = (camExpo>0?'+':camExpo<0?'−':'')+Math.abs(camExpo).toFixed(1).replace('.',',');
+  el.hidden=false; el.classList.toggle('set', camExpo!==0); clearTimeout(setExpo.t); setExpo.t=setTimeout(()=>{ el.hidden = true; }, 2500);
+  if (P().flash>.02 && at){ const r=view.getBoundingClientRect(); let x=(at.x-r.left)/r.width; if(view.classList.contains('mirror')) x=1-x; if(x>=0&&x<=1){ P().fx=x; P().fy=Math.min(1,Math.max(0,(at.y-r.top)/r.height)); } }
+}
+/* orientation from the motion sensor: horizontal shots get rotated like in the iPhone camera */
+let grav = null, motionAsked = false;
+function askMotion(){ if (motionAsked) return; motionAsked = true;
+  const on = () => window.addEventListener('devicemotion', ev => { const g=ev.accelerationIncludingGravity; if (g && g.x!=null) grav={x:g.x,y:g.y,z:g.z}; });
+  try { if (window.DeviceMotionEvent && typeof DeviceMotionEvent.requestPermission==='function') DeviceMotionEvent.requestPermission().then(s=>{ if(s==='granted') on(); }).catch(()=>{}); else on(); } catch(_){ }
+}
+function rotFromGravity(){ if (!grav) return 0; const {x,y,z}=grav; if (Math.abs(z)>8.5) return 0;   // lying flat: keep portrait
+  if (Math.abs(x)>Math.abs(y)) return x<0 ? 3 : 1; return y>0 ? 2 : 0; }
 const track = () => stream && stream.getVideoTracks()[0];
 function streamAlive(){ const t=track(); return t && t.readyState==='live'; }
 async function startStream(){
@@ -417,6 +442,8 @@ async function startStream(){
   video.srcObject = stream; await video.play();
   view.classList.toggle('mirror', facing==='user');
   const t = track(), caps = t.getCapabilities ? t.getCapabilities() : {};
+  hwExpo = caps && caps.exposureCompensation && caps.exposureCompensation.max>caps.exposureCompensation.min ? caps.exposureCompensation : null;
+  lastFrameT = performance.now();
   hwZoom = caps && caps.zoom && caps.zoom.max>caps.zoom.min ? {min:caps.zoom.min, max:caps.zoom.max, f: /ultra|triple|dual wide|сверхшир|тройн/i.test(t.label)?.5:1} : null;
 }
 async function findLenses(){
@@ -453,16 +480,23 @@ async function setZoom(z, commit){
 const hasRVFC = 'requestVideoFrameCallback' in HTMLVideoElement.prototype; let slowMs = 0;
 function camLoop(){ if (mode!=='cam' || camPaused) { camRaf=0; return; }
   let dt = 0;
-  if (video.readyState>=2){ const t0=performance.now(); E.setSource(video,{live:true}); liveFrame++; draw(); if (liveFrame%10===0){ E.gl.finish(); slowMs=performance.now()-t0; } dt=Math.max(performance.now()-t0, slowMs); }
+  if (video.currentTime!==lastVT){ lastVT=video.currentTime; lastFrameT=performance.now(); }
+  if (video.readyState>=2 && !ctxLost){ const t0=performance.now(); E.setSource(video,{live:true}); liveFrame++; draw(); if (liveFrame%10===0){ E.gl.finish(); slowMs=performance.now()-t0; } dt=Math.max(performance.now()-t0, slowMs); }
   const wait = Math.max(dt>24 ? Math.min(400, dt*1.4) : 0, 1000/30 - dt);   // cap at ~30 fps to keep the phone cool
   const next = () => setTimeout(camLoop, Math.max(0,wait));
   camRaf = 1; if (hasRVFC) video.requestVideoFrameCallback(next); else requestAnimationFrame(next); }
 function pauseCam(){ camPaused = true; const t=track(); if (t) t.enabled = false; }
+/* watchdog: if the camera stops delivering frames, wake it up, then restart it */
+setInterval(async () => { if (mode!=='cam' || camPaused || document.hidden || !stream) return;
+  const idle = performance.now()-lastFrameT;
+  if (idle>2500 && idle<6000){ try { await video.play(); } catch(_){} }
+  else if (idle>=6000){ lastFrameT=performance.now(); try { await startStream(); buildZoomChips(); if(!camRaf) camLoop(); } catch(_){ } }
+}, 1500);
 async function openCam(){
   if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia){ toast('Камера недоступна в этом браузере. Используйте HQ или добавьте фото из альбома.'); return; }
-  camState.P = {...P(), preset:P().preset}; adjOpen=false; camPaused=false; setMode('cam');
+  camState.P = {...P(), preset:P().preset}; adjOpen=false; camPaused=false; camExpo=0; lastFrameT=performance.now(); setMode('cam');
   try {
-    if (streamAlive()){ track().enabled = true; }               // reuse the stream: no new permission prompt
+    if (streamAlive()){ track().enabled = true; try { await video.play(); } catch(_){} }   // reuse the stream: no new permission prompt
     else { await startStream(); await findLenses(); }
     buildZoomChips(); setMode('cam'); if (!camRaf) camLoop();
   } catch(e){ toast(e && e.name==='NotAllowedError' ? 'Нет доступа к камере. Разрешите: Настройки → Safari → Камера → Разрешить.' : 'Не удалось включить камеру.', 4500); closeCam(); }
@@ -479,8 +513,9 @@ $('#tgDate').onclick = () => { P().date = P().date?0:1; setMode('cam'); toast(P(
 $('#tgFlash').onclick = () => { P().flash = P().flash>.02 ? 0 : .75; if (P().flash){ P().fx=.5; P().fy=.48; } P().preset=null; setMode('cam'); toast(P().flash?'Вспышка включена':'Вспышка выключена', 1200); };
 $('#tgTap').onclick = () => { tapShoot=!tapShoot; saveCamPrefs(); setMode('cam'); toast(tapShoot?'Снимок по касанию кадра':'Касание кадра наводит вспышку', 1500); };
 $('#tgTimer').onclick = () => { timerSec = timerSec===0?3:timerSec===3?10:0; saveCamPrefs(); setMode('cam'); toast(timerSec?'Таймер '+timerSec+' с':'Таймер выключен', 1200); };
-document.addEventListener('visibilitychange', () => { if (mode!=='cam') return;
-  if (!document.hidden && !streamAlive()) startStream().then(()=>{ buildZoomChips(); if(!camRaf) camLoop(); }).catch(()=>{}); });
+document.addEventListener('visibilitychange', () => { if (mode!=='cam' || document.hidden) return; lastFrameT=performance.now();
+  if (!streamAlive()) startStream().then(()=>{ buildZoomChips(); if(!camRaf) camLoop(); }).catch(()=>{}); else { video.play().catch(()=>{}); if(!camRaf) camLoop(); } });
+$('#tgGrid').onclick = () => { gridOn=!gridOn; saveCamPrefs(); setMode('cam'); };
 
 let lastShot = null, shotT = 0, counting = false;
 async function shoot(){
@@ -489,29 +524,30 @@ async function shoot(){
   const fx=$('#flashfx'); fx.classList.add('on'); setTimeout(()=>fx.classList.remove('on'),60);
   const w=video.videoWidth, h=video.videoHeight, c=document.createElement('canvas'); c.width=w; c.height=h;
   const g=c.getContext('2d'); if (view.classList.contains('mirror')){ g.translate(w,0); g.scale(-1,1); } g.drawImage(video,0,0);
-  camPaused = true;
   try {
-    const blob = await new Promise(r => c.toBlob(r,'image/jpeg',.96));
-    const it = await addItem({blob, name:'MYL_'+stamp(new Date())+'.jpg', exif:null, img:c, P:{...camState.P}, crop:{...camState.crop, zoom:camState.crop.zoom*digitalZoom}, taken:Date.now()});
-    E.setSource(c); const r = exportWith(it); lastShot = {name: outName(it), bytes:r.bytes}; unsaved.push(lastShot);
+    const blob = await new Promise(r => c.toBlob(r,'image/jpeg',.95));
+    const rot = facing==='user' ? 0 : rotFromGravity();
+    const ip = {...camState.P, ev:(camState.P.ev||0) + (hwExpo?0:camExpo)};
+    const it = await addItem({blob, name:'PHY_'+stamp(new Date())+'.jpg', exif:null, img:c, P:ip, crop:{...camState.crop, rot, zoom:camState.crop.zoom*digitalZoom}, taken:Date.now()});
+    c.width=c.height=1;   // free the frame right away
+    unsaved.push(it);
     $('#lastShot').innerHTML=''; const im=document.createElement('img'); im.alt=''; it.thumbURL=URL.createObjectURL(it.thumb); im.src=it.thumbURL; $('#lastShot').appendChild(im);
-    $('#shottext').textContent = unsaved.length>1 ? `Снято · ${unsaved.length} не в Фото` : 'Снято · '+r.W+'×'+r.H;
+    $('#shottext').textContent = unsaved.length>1 ? `${unsaved.length} не в Фото` : 'Снято';
     $('#shotSave').textContent = unsaved.length>1 ? `В Фото (${unsaved.length})` : 'В Фото';
     $('#shotmsg').hidden=false; clearTimeout(shotT); shotT=setTimeout(()=>$('#shotmsg').hidden=true, 7000);
     cur = 0;
   } catch(e){ toast('Не удалось сохранить кадр.'); }
-  camPaused = false; if (!camRaf) camLoop();
 }
 let unsaved = [];
 $('#shutter').onclick = shoot;
-$('#shotSave').onclick = async () => { if (!unsaved.length) return; const list=unsaved.slice(); if (await shareFiles(list)) { unsaved = []; $('#shotmsg').hidden=true; } };
+$('#shotSave').onclick = async () => { if (!unsaved.length) return; const list=unsaved.filter(p=>photos.includes(p)); unsaved=[]; $('#shotmsg').hidden=true; await processAndOffer(list); };
 $('#lastShot').onclick = async () => { if (!photos.length) return; pauseCam(); view.classList.remove('mirror'); await select(0,'view'); };
 $('#nativeCam').addEventListener('change', async e => { const f=e.target.files[0]; e.target.value=''; if(!f) return;
   const ip = {...camState.P}; if (mode==='cam'){ pauseCam(); view.classList.remove('mirror'); }
   const it = await addFiles([f], {P:ip}); if (it) toast('Снято камерой iPhone в полном качестве', 2500); });
 
 /* ================= export & save ================= */
-const outName = p => (p&&p.name ? p.name.replace(/\.[^.]+$/,'') : 'mylnitsa')+'_retro.jpg';
+const outName = p => (p&&p.name ? p.name.replace(/\.[^.]+$/,'') : 'ph-y')+'_ph-y.jpg';
 function exportWith(it){
   const g = GLE.cropGeom(E.srcW, E.srcH, it.crop); let W=Math.round(g.cw), H=Math.round(g.ch);
   const L=Math.max(W,H); if (L>MAX_SRC){ const s=MAX_SRC/L; W=Math.round(W*s); H=Math.round(H*s); }
@@ -540,14 +576,15 @@ $('#sheet').addEventListener('click', e => { if (e.target.id==='sheet' && !$('#s
 async function processAndOffer(list){
   if (!list.length) return;
   sheet({title:'Обрабатываю в полном размере…', progress:true});
-  const out=[]; const keepImg = loadedImg;
+  const out=[]; const keepImg = mode==='cam' ? null : loadedImg; const wasCam = mode==='cam' && !camPaused; if (wasCam) camPaused = true;
   for (let i=0;i<list.length;i++){ const it=list[i];
     const msg=$('#sheetMain .msg'); if (msg) msg.innerHTML = `<b>Обрабатываю в полном размере…</b>${i+1} из ${list.length}`; const pg=$('#prog'); if(pg) pg.style.width=(i/list.length*100)+'%';
     await frame(); await tick();
-    try { const img = it===sample ? sampleImg : (it===photos[cur] && loadedImg) ? loadedImg : await decode(it.blob); E.setSource(img);
+    try { const img = it===sample ? sampleImg : (mode!=='cam' && it===photos[cur] && loadedImg) ? loadedImg : await decode(it.blob); E.setSource(img);
       const r = exportWith(it); out.push({name:outName(it), bytes:r.bytes, W:r.W, H:r.H}); if (img!==loadedImg && img!==sampleImg) img.close && img.close(); }
     catch(e){ toast('Не удалось обработать '+it.name); } }
   if (keepImg){ E.setSource(keepImg); requestRender(); }
+  if (wasCam){ camPaused = false; if (!camRaf) camLoop(); }
   if (!out.length){ closeSheet(); return; }
   const mb = out.reduce((s,f)=>s+f.bytes.length,0)/1048576, one = out.length===1 ? `${out[0].W}×${out[0].H}, ` : '';
   sheet({title: out.length===1 ? 'Фото готово' : `Готово: ${out.length} фото`, text: `${one}${fmt1(mb)} МБ, JPEG 95%. Затем в меню нажмите «Сохранить изображение».`,
@@ -557,6 +594,13 @@ async function processAndOffer(list){
 function savePresetFromCurrent(){ const list=loadMine(); const p={...P()}; delete p.fx; delete p.fy; delete p.preset; delete p.date;
   const name='Мой '+(list.length+1); list.push({name, p}); saveMine(list); builtTab=null; refreshBottom(); toast('Пресет «'+name+'» добавлен в фильтры'); }
 
+/* ================= GPU context loss (iOS under memory pressure) ================= */
+let ctxLost = false, ctxT = 0;
+view.addEventListener('webglcontextlost', e => { e.preventDefault(); ctxLost = true; clearTimeout(ctxT); ctxT = setTimeout(() => location.reload(), 4000); });
+view.addEventListener('webglcontextrestored', () => { clearTimeout(ctxT);
+  try { E = GLE.Engine(view); } catch(_){ location.reload(); return; }
+  ctxLost = false; if (mode!=='cam' && loadedImg) E.setSource(loadedImg); requestRender(); if (mode==='cam' && !camRaf) camLoop(); });
+
 /* ================= start ================= */
 (async () => {
   sampleImg = makeSample();
@@ -564,6 +608,7 @@ function savePresetFromCurrent(){ const list=loadMine(); const p={...P()}; delet
   if (photos.length){ cur=0; setMode('view'); try{ useImage(await decode(photos[0].blob)); }catch(_){ useImage(sampleImg); } }
   else { setMode('view'); useImage(sampleImg); }
   if ('serviceWorker' in navigator && location.protocol.startsWith('http')) navigator.serviceWorker.register('sw.js').catch(()=>{});
+  openCam();   // ph-y starts in the camera
 })();
 window.__myl = {E, get photos(){return photos;}, exportWith, get mode(){return mode;}, get P(){return P();}, render:()=>requestRender(), setZoom};
 })();
