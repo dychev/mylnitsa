@@ -139,7 +139,7 @@ body.cam .tabs{display:none}
 
 /* v4: modes, viewer bar, zoom, timer */
 .vbar{display:none}
-body.view .vbar{display:grid;grid-template-columns:44px 1fr 44px;align-items:center;padding:6px 14px 4px}
+body.view .vbar{display:grid;grid-template-columns:44px 1fr 44px 44px;align-items:center;padding:6px 14px 4px}
 .vinfo{text-align:center;display:grid;gap:2px}
 .vinfo b{font-size:14px;font-weight:600}
 .vinfo span{font-size:12px;color:var(--sec)}
@@ -157,6 +157,12 @@ body.edit .tabs{display:grid}
 .expo .sun{position:absolute;left:46px;top:-12px;display:flex;align-items:center;gap:3px;color:var(--yellow);font-size:13px;font-weight:600;white-space:nowrap}
 .expo .sun svg{width:18px;height:18px}
 .expo:not(.set) .sun b{display:none}
+
+/* v6: icons follow the phone orientation, like the iPhone camera */
+body.cam .top .ico svg, body.cam .lenses button, body.cam .hq, body.cam .last{transition:transform .3s}
+body.cam[data-rot="1"] .top .ico svg, body.cam[data-rot="1"] .lenses button, body.cam[data-rot="1"] .hq, body.cam[data-rot="1"] .last{transform:rotate(-90deg)}
+body.cam[data-rot="3"] .top .ico svg, body.cam[data-rot="3"] .lenses button, body.cam[data-rot="3"] .hq, body.cam[data-rot="3"] .last{transform:rotate(90deg)}
+body.cam[data-rot="2"] .top .ico svg, body.cam[data-rot="2"] .lenses button, body.cam[data-rot="2"] .hq, body.cam[data-rot="2"] .last{transform:rotate(180deg)}
 
 </style>
 </head>
@@ -219,6 +225,7 @@ body.edit .tabs{display:grid}
     <div class="vbar" id="vbar">
       <button class="ico" id="vShare" type="button" aria-label="Сохранить в Фото"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3v12M7.5 7.5 12 3l4.5 4.5"/><path d="M6 11H5a1.5 1.5 0 0 0-1.5 1.5v7A1.5 1.5 0 0 0 5 21h14a1.5 1.5 0 0 0 1.5-1.5v-7A1.5 1.5 0 0 0 19 11h-1"/></svg></button>
       <div class="vinfo"><b id="vDate"></b><span id="vMeta"></span></div>
+      <button class="ico" id="vRot" type="button" aria-label="Повернуть фото"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 9h9a4 4 0 0 1 4 4v6"/><path d="M8 6 5 9l3 3"/><rect x="5" y="13" width="9" height="7" rx="1.5"/></svg></button>
       <button class="ico" id="vDel" type="button" aria-label="Удалить фото"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 6.5h16M9.5 6.5V4.5h5v2M6.5 6.5l1 13a1.5 1.5 0 0 0 1.5 1.4h6a1.5 1.5 0 0 0 1.5-1.4l1-13M10 10.5v6.5M14 10.5v6.5"/></svg></button>
     </div>
     <nav class="tabs" role="tablist">
@@ -246,10 +253,10 @@ body.edit .tabs{display:grid}
 <div class="flashfx" id="flashfx"></div>
 <div class="sheet" id="sheet" hidden><div class="box"><div class="grp" id="sheetMain"></div><div class="grp"><button type="button" class="act bold" id="sheetCancel">Отмена</button></div></div></div>
 
-<script src="util.js?v=5"></script>
-<script src="gl.js?v=5"></script>
-<script src="presets.js?v=5"></script>
-<script src="sample.js?v=5"></script>
-<script src="app.js?v=5"></script>
+<script src="util.js?v=6"></script>
+<script src="gl.js?v=6"></script>
+<script src="presets.js?v=6"></script>
+<script src="sample.js?v=6"></script>
+<script src="app.js?v=6"></script>
 </body>
 </html>

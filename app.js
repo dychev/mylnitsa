@@ -346,6 +346,8 @@ $('#doneEdit').onclick = () => { persist(item()); editBackup=null; setMode('view
 $('#cancelEdit').onclick = () => { if (editBackup){ item().P = editBackup.P; item().crop = editBackup.crop; persist(item()); } editBackup=null; setMode('view'); };
 $('#vDel').onclick = () => { if (cur<0) return; const id=photos[cur].id; sheet({title:'Удалить это фото?', text:'Из альбома приложения. В «Фото» на iPhone ничего не удалится.', actions:[{label:'Удалить фото', red:true, run:()=>deleteIds(new Set([id]))}]}); };
 $('#vShare').onclick = () => processAndOffer([item()]);
+$('#vRot').onclick = async () => { if (cur<0) return; const it=photos[cur]; it.crop.rot=(it.crop.rot+1)%4; it.crop.ox=0; it.crop.oy=0; persist(it); requestRender();
+  if (loadedImg){ it.thumb = await makeThumb(loadedImg, it.crop.rot); if (it.thumbURL) URL.revokeObjectURL(it.thumbURL); it.thumbURL=null; persist(it); } };
 function stepPhoto(dir){ if (photos.length<2) return; const n = cur+dir; if (n<0||n>=photos.length){ toast(dir>0?'Это последнее фото':'Это первое фото',1000); return; } select(n,'view'); }
 
 /* ================= rendering ================= */
@@ -426,13 +428,23 @@ function setExpo(v, at){
   if (P().flash>.02 && at){ const r=view.getBoundingClientRect(); let x=(at.x-r.left)/r.width; if(view.classList.contains('mirror')) x=1-x; if(x>=0&&x<=1){ P().fx=x; P().fy=Math.min(1,Math.max(0,(at.y-r.top)/r.height)); } }
 }
 /* orientation from the motion sensor: horizontal shots get rotated like in the iPhone camera */
-let grav = null, motionAsked = false;
-function askMotion(){ if (motionAsked) return; motionAsked = true;
-  const on = () => window.addEventListener('devicemotion', ev => { const g=ev.accelerationIncludingGravity; if (g && g.x!=null) grav={x:g.x,y:g.y,z:g.z}; });
-  try { if (window.DeviceMotionEvent && typeof DeviceMotionEvent.requestPermission==='function') DeviceMotionEvent.requestPermission().then(s=>{ if(s==='granted') on(); }).catch(()=>{}); else on(); } catch(_){ }
+let grav = null, motionState = 'none', uiRot = 0;   // none | asking | on | denied
+function onMotion(ev){ if (ev.gamma==null || ev.beta==null) return; grav={b:ev.beta, g:ev.gamma};
+  const r = rotFromGravity(); if (r!==uiRot){ uiRot=r; document.body.dataset.rot=r; } }
+function askMotion(){ if (motionState==='on' || motionState==='denied' || motionState==='asking') return;
+  const on = () => { motionState='on'; window.addEventListener('deviceorientation', onMotion); };
+  try {
+    if (window.DeviceOrientationEvent && typeof DeviceOrientationEvent.requestPermission==='function'){ motionState='asking';
+      DeviceOrientationEvent.requestPermission().then(s=>{ if(s==='granted') on(); else motionState='denied'; }).catch(()=>{ motionState='none'; }); }
+    else on();
+  } catch(_){ motionState='none'; }
 }
-function rotFromGravity(){ if (!grav) return 0; const {x,y,z}=grav; if (Math.abs(z)>8.5) return 0;   // lying flat: keep portrait
-  if (Math.abs(x)>Math.abs(y)) return x<0 ? 3 : 1; return y>0 ? 2 : 0; }
+['touchend','click'].forEach(t => document.addEventListener(t, askMotion, true));
+/* deviceorientation is spec-consistent on iOS and Android: gamma = left/right tilt, beta = front/back tilt */
+function rotFromGravity(){ if (!grav) return 0; const {b,g}=grav;
+  if (Math.abs(g)>50) return g<0 ? 3 : 1;      // landscape: top of the phone to the left → 3, to the right → 1
+  if (b < -50) return 2;                        // upside down
+  return 0; }
 const track = () => stream && stream.getVideoTracks()[0];
 function streamAlive(){ const t=track(); return t && t.readyState==='live'; }
 async function startStream(){
@@ -522,14 +534,18 @@ async function shoot(){
   if (video.readyState<2 || counting) return;
   if (timerSec){ counting=true; const cd=$('#countdown'); for (let s=timerSec;s>0;s--){ cd.textContent=s; cd.hidden=false; await new Promise(r=>setTimeout(r,1000)); } cd.hidden=true; counting=false; }
   const fx=$('#flashfx'); fx.classList.add('on'); setTimeout(()=>fx.classList.remove('on'),60);
-  const w=video.videoWidth, h=video.videoHeight, c=document.createElement('canvas'); c.width=w; c.height=h;
-  const g=c.getContext('2d'); if (view.classList.contains('mirror')){ g.translate(w,0); g.scale(-1,1); } g.drawImage(video,0,0);
+  const w=video.videoWidth, h=video.videoHeight; if (!w || !h){ toast('Камера ещё не готова.'); return; }
+  const c = capCanvas || (capCanvas = document.createElement('canvas')); if (c.width!==w || c.height!==h){ c.width=w; c.height=h; }
+  const g=c.getContext('2d'); let ok=false;
+  for (let attempt=0; attempt<4 && !ok; attempt++){
+    g.setTransform(1,0,0,1,0,0); if (view.classList.contains('mirror')){ g.translate(w,0); g.scale(-1,1); } g.drawImage(video,0,0); g.setTransform(1,0,0,1,0,0);
+    ok = !isBlack(c); if (!ok) await new Promise(r=>setTimeout(r,120)); }
+  if (!ok){ toast('Камера не отдала кадр. Попробуйте ещё раз.', 2500); lastFrameT = 0; return; }
   try {
     const blob = await new Promise(r => c.toBlob(r,'image/jpeg',.95));
     const rot = facing==='user' ? 0 : rotFromGravity();
     const ip = {...camState.P, ev:(camState.P.ev||0) + (hwExpo?0:camExpo)};
     const it = await addItem({blob, name:'PHY_'+stamp(new Date())+'.jpg', exif:null, img:c, P:ip, crop:{...camState.crop, rot, zoom:camState.crop.zoom*digitalZoom}, taken:Date.now()});
-    c.width=c.height=1;   // free the frame right away
     unsaved.push(it);
     $('#lastShot').innerHTML=''; const im=document.createElement('img'); im.alt=''; it.thumbURL=URL.createObjectURL(it.thumb); im.src=it.thumbURL; $('#lastShot').appendChild(im);
     $('#shottext').textContent = unsaved.length>1 ? `${unsaved.length} не в Фото` : 'Снято';
@@ -538,7 +554,9 @@ async function shoot(){
     cur = 0;
   } catch(e){ toast('Не удалось сохранить кадр.'); }
 }
-let unsaved = [];
+let unsaved = [], capCanvas = null;
+const probe = document.createElement('canvas'); probe.width = probe.height = 12;
+function isBlack(c){ try { const g=probe.getContext('2d',{willReadFrequently:true}); g.drawImage(c,0,0,12,12); const d=g.getImageData(0,0,12,12).data; let m=0; for(let i=0;i<d.length;i+=4) m=Math.max(m,d[i],d[i+1],d[i+2]); return m<6; } catch(_){ return false; } }
 $('#shutter').onclick = shoot;
 $('#shotSave').onclick = async () => { if (!unsaved.length) return; const list=unsaved.filter(p=>photos.includes(p)); unsaved=[]; $('#shotmsg').hidden=true; await processAndOffer(list); };
 $('#lastShot').onclick = async () => { if (!photos.length) return; pauseCam(); view.classList.remove('mirror'); await select(0,'view'); };
