@@ -43,7 +43,9 @@ void main(){
   lum=dot(c,vec3(.299,.587,.114)); float bs=sat*(1.0+.32*ccd)+(c.b>c.r?.12*ccd:0.0);
   c=lum+(c-lum)*bs; c=clamp(c,0.0,1.0);
   float con=contrast*1.6; c+=con*c*(1.0-c)*(2.0*c-1.0);
-  c=min(c*(1.0+blow*.7),1.0);
+  c*=1.0+blow*.7;
+  // soft shoulder instead of a hard clip: bright sun keeps some detail
+  c=mix(c, .82+.18*(1.0-exp(-(c-.82)/.18)), step(.82,c));
   if(nb>0){ vec3 k=toOk(c*c); float C=length(k.yz), C0=C; float hh=degrees(atan(k.z,k.y)); if(hh<0.0) hh+=360.0;
     for(int i=0;i<4;i++){ if(i>=nb) break; vec4 B=bands[i]; float dd=abs(mod(hh-B.x+540.0,360.0)-180.0);
       if(dd<B.y){ float w=(.5+.5*cos(PI*dd/B.y))*min(1.0,C0/.04); hh+=B.z*w; C*=1.0+B.w*w; k.x+=bandL[i]*w*min(1.0,C0/.1); } }
@@ -132,18 +134,29 @@ function Engine(canvas){
 
   let src=null, srcW=0, srcH=0;
   const stamp={tex:null, aspect:1, text:null};
+  // seven-segment date imprint, like the LED date backs of 90s–2000s cameras
+  const SEG={'0':'abcdef','1':'bc','2':'abged','3':'abgcd','4':'fgbc','5':'afgcd','6':'afgedc','7':'abc','8':'abcdefg','9':'abcdfg'};
+  function drawSeg(g,ch,x,y,w,h,t){
+    const sk=.12; const P=(px,py)=>[x+px+(h-py)*sk, y+py];
+    const hz=(yy)=>[P(t*.6,yy),P(t*1.1,yy-t/2),P(w-t*1.1,yy-t/2),P(w-t*.6,yy),P(w-t*1.1,yy+t/2),P(t*1.1,yy+t/2)];
+    const vt=(xx,y0,y1)=>[P(xx,y0+t*.6),P(xx+t/2,y0+t*1.1),P(xx+t/2,y1-t*1.1),P(xx,y1-t*.6),P(xx-t/2,y1-t*1.1),P(xx-t/2,y0+t*1.1)];
+    const m=h/2, segs={a:hz(t/2), g:hz(m), d:hz(h-t/2), f:vt(t/2,0,m), b:vt(w-t/2,0,m), e:vt(t/2,m,h), c:vt(w-t/2,m,h)};
+    for(const k of SEG[ch]||''){ const pts=segs[k]; g.beginPath(); g.moveTo(pts[0][0],pts[0][1]); for(const p of pts.slice(1)) g.lineTo(p[0],p[1]); g.closePath(); g.fill(); }
+  }
   function setStamp(text){
     if(text===stamp.text) return; stamp.text=text;
     if(!text){ return; }
-    const fs=96, c=document.createElement('canvas'), g=c.getContext('2d');
-    const font='bold '+fs+'px "Courier New", ui-monospace, Menlo, monospace';
-    g.font=font; const tw=Math.ceil(g.measureText(text).width);
-    c.width=tw+fs; c.height=Math.ceil(fs*1.5);
-    g.font=font; g.textBaseline='middle'; g.textAlign='center';
-    g.shadowColor='rgba(255,90,0,.9)'; g.shadowBlur=fs*.28; g.fillStyle='rgba(255,120,30,.95)';
-    g.fillText(text,c.width/2,c.height/2+fs*.05); g.shadowBlur=fs*.08; g.fillStyle='rgba(255,196,120,1)'; g.fillText(text,c.width/2,c.height/2+fs*.05);
-    // premultiply for (1-a)+rgb blending
-    const id=g.getImageData(0,0,c.width,c.height), d=id.data; for(let i=0;i<d.length;i+=4){ const a=d[i+3]/255*0.92; d[i]=d[i]*a; d[i+1]=d[i+1]*a; d[i+2]=d[i+2]*a; d[i+3]=a*255; }
+    const H=96, W=H*.52, T=H*.13, gap=H*.2, sp=H*.34;
+    let width=gap; for(const ch of text){ width += ch===' '?sp : ch==="'"?H*.18 : ch==='.'?H*.18 : W+gap*.55; }
+    const c=document.createElement('canvas'), pad=H*.6; c.width=Math.ceil(width+pad*2); c.height=Math.ceil(H+pad*2); const g=c.getContext('2d');
+    const paint=(blur,color,alpha)=>{ g.save(); g.shadowColor=color; g.shadowBlur=blur; g.globalAlpha=alpha; g.fillStyle=color; let x=pad;
+      for(const ch of text){ if(ch===' '){ x+=sp; continue; }
+        if(ch==="'"){ g.beginPath(); g.moveTo(x+H*.1,pad); g.lineTo(x+H*.16,pad); g.lineTo(x+H*.08,pad+H*.26); g.lineTo(x+H*.02,pad+H*.26); g.closePath(); g.fill(); x+=H*.18; continue; }
+        if(ch==='.'){ g.fillRect(x+H*.02,pad+H-T,T,T); x+=H*.18; continue; }
+        drawSeg(g,ch,x,pad,W,H,T); x+=W+gap*.55; }
+      g.restore(); };
+    paint(H*.28,'#ff3c00',.55); paint(H*.1,'#ff6a10',.8); paint(H*.025,'#ff9a3c',1); paint(0,'#ffc070',.55);
+    const id=g.getImageData(0,0,c.width,c.height), d=id.data; for(let i=0;i<d.length;i+=4){ const a=d[i+3]/255*0.9; d[i]=d[i]*a; d[i+1]=d[i+1]*a; d[i+2]=d[i+2]*a; d[i+3]=a*255; }
     if(!stamp.tex) stamp.tex=gl.createTexture();
     gl.bindTexture(gl.TEXTURE_2D,stamp.tex); gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL,true);
     gl.texImage2D(gl.TEXTURE_2D,0,gl.RGBA8,c.width,c.height,0,gl.RGBA,gl.UNSIGNED_BYTE,new Uint8Array(d.buffer));
@@ -205,12 +218,12 @@ function Engine(canvas){
     target = out.toScreen?null:T1;
     const stOn = !!(P.date && stamp.tex);
     pass(progs.final,target,{A:T3.t,Bl:Bu.t,O:T0.t,St:stOn?stamp.tex:T0.t},p=>{ const f=(n,v)=>gl.uniform1f(U(p,n),v);
-      gl.uniform1i(U(p,'bypass'),0); gl.uniform2f(U(p,'res'),w,h); f('sharp',P.sharp*1.6); f('ca',P.ca); f('iso',P.iso); f('chroma',P.chroma);
+      gl.uniform1i(U(p,'bypass'),0); gl.uniform2f(U(p,'res'),w,h); f('sharp',P.sharp*1.25); f('ca',P.ca); f('iso',P.iso); f('chroma',P.chroma);
       f('strength',P.strength==null?1:P.strength); f('k',k); f('flipY',out.flip?1:0); gl.uniform1ui(U(p,'seed'),(P.seed||7)>>>0);
       f('gsize',P.gsize==null?.3:P.gsize); gl.uniform1i(U(p,'gtype'),P.gtype|0);
       const pn=P.pix|0; if(pn>0){ const L=Math.max(w,h); gl.uniform2f(U(p,'pixN'),Math.round(pn*w/L),Math.round(pn*h/L)); } else gl.uniform2f(U(p,'pixN'),0,0);
       gl.uniform1i(U(p,'hasSt'),stOn?1:0);
-      if(stOn){ const m=Math.min(w,h), hh=0.055*m, ww=hh*stamp.aspect, mx=0.05*m; gl.uniform4f(U(p,'stRect'),1-(mx+ww)/w, mx/h, 1-mx/w, (mx+hh)/h); } });
+      if(stOn){ const m=Math.min(w,h), hh=0.075*m, ww=hh*stamp.aspect, mx=0.03*m; gl.uniform4f(U(p,'stRect'),1-(mx+ww)/w, mx/h, 1-mx/w, (mx+hh)/h); } });
     return target;
   }
   function read(target){ const px=new Uint8Array(target.w*target.h*4); gl.bindFramebuffer(gl.FRAMEBUFFER,target.fb); gl.readPixels(0,0,target.w,target.h,gl.RGBA,gl.UNSIGNED_BYTE,px); return px; }

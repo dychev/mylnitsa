@@ -1,5 +1,5 @@
-const CACHE='mylnitsa-v3';
-const FILES=['./','index.html','util.js?v=3','gl.js?v=3','presets.js?v=3','sample.js?v=3','app.js?v=3','heic2any.min.js','manifest.webmanifest','icon-180.png','icon-192.png','icon-512.png'];
+const CACHE='mylnitsa-v4';
+const FILES=['./','index.html','util.js?v=4','gl.js?v=4','presets.js?v=4','sample.js?v=4','app.js?v=4','heic2any.min.js','manifest.webmanifest','icon-180.png','icon-192.png','icon-512.png'];
 self.addEventListener('install',e=>{ e.waitUntil(caches.open(CACHE).then(c=>c.addAll(FILES)).then(()=>self.skipWaiting())); });
 self.addEventListener('activate',e=>{ e.waitUntil(caches.keys().then(ks=>Promise.all(ks.filter(k=>k!==CACHE).map(k=>caches.delete(k)))).then(()=>self.clients.claim())); });
 self.addEventListener('fetch',e=>{

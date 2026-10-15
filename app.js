@@ -31,7 +31,7 @@ const defP = () => ({...BASE, ...PRESETS[0].p, preset:PRESETS[0].id});
 let photos = [], cur = -1;
 const sample = {P:defP(), crop:newCrop(), name:'mylnitsa.jpg'};
 const camState = {P:defP(), crop:{...newCrop(), aspect:4/3}};
-let mode = 'edit', tab = 'flt', compare = false, loadedImg = null, adjOpen = false, sampleImg = null;
+let mode = 'view', tab = 'flt', compare = false, loadedImg = null, adjOpen = false, sampleImg = null;
 const item = () => mode==='cam' ? camState : (cur>=0 ? photos[cur] : sample);
 const P = () => item().P;
 const crop = () => item().crop;
@@ -90,7 +90,7 @@ const PARAMS = [
   {k:'chroma', label:'Цветной шум', short:'Цв. шум', min:0, max:1, fmt:pct},
   {k:'pix', label:'Пиксели', short:'Пиксели', opts:[[0,'Выкл'],[1024,'1024'],[640,'VGA 640'],[320,'320']]},
   {k:'res', label:'Матрица', short:'Матрица', opts:[[640,'VGA'],[1600,'2 Мп'],[2048,'3 Мп'],[2560,'5 Мп'],[3648,'10 Мп']]},
-  {k:'date', label:'Дата в углу', short:'Дата', opts:[[0,'Выкл'],[1,'Вкл']]},
+  {k:'date', label:'Дата в углу', short:'Дата', opts:[[0,'Выкл'],[1,"'26 10 15"],[2,"15 10 '26"],[3,'2026.10.15']]},
   {k:'strength', label:'Сила эффекта', short:'Сила', min:0, max:1, fmt:pct},
 ];
 let selParam = 'ev', cropParam = 'angle';
@@ -184,7 +184,7 @@ function refreshBottom(){
   }
   if (inCam) paintChips(camF);
   if (!$('#dial').hidden) drawDial();
-  $('#grid').hidden = !(t==='crop' && !inCam);
+  $('#grid').hidden = !(t==='crop' && mode==='edit');
   updateMarker();
 }
 const ASPECTS = [[null,'Ориг.'],[4/3,'4:3'],[3/2,'3:2'],[1,'1:1'],[16/9,'16:9']];
@@ -215,8 +215,8 @@ function applyPreset(p, id, name){ const old = P(); const np = {...BASE, ...p, p
 const rr = (a,b) => a + Math.random()*(b-a), pick = a => a[Math.floor(Math.random()*a.length)];
 function randomPreset(){
   const bw = Math.random()<.12, ir = !bw && Math.random()<.08, fl = Math.random()<.25;
-  const p = {ev:rr(-.3,.4), temp:rr(-.6,.5), tint:rr(-.2,.2), ccd:rr(.2,.9), sat:bw?1:rr(.85,1.3), contrast:rr(.1,.55)+(bw?.4:0), blow:rr(.2,.7),
-    flash:fl?rr(.4,.9):0, fsize:rr(.3,.7), fx:.5, fy:.48, vig:rr(.1,.55), soft:rr(.05,.6), sharp:rr(.35,1.1), ca:rr(.05,.6),
+  const p = {ev:rr(-.2,.25), temp:rr(-.5,.45), tint:rr(-.15,.15), ccd:rr(.2,.85), sat:bw?1:rr(.85,1.25), contrast:rr(.05,.3)+(bw?.35:0), blow:rr(.06,.35),
+    flash:fl?rr(.4,.9):0, fsize:rr(.3,.7), fx:.5, fy:.48, vig:rr(.08,.45), soft:rr(.05,.5), sharp:rr(.2,.6), ca:rr(.05,.45),
     iso:rr(.08,.65), gtype:pick([0,0,1,2]), gsize:rr(.1,.7), chroma:bw?0:rr(.05,.5), res:pick([640,1600,2048,2048,2560,3648]), bw:bw?1:0, ir:ir?1:0};
   applyPreset(p, 'random', 'Случайный');
 }
@@ -253,11 +253,13 @@ function exifDate(seg){ try{ if(!seg) return null; const dv=new DataView(seg.buf
   const str=e=>{ const cnt=u32(e+4), off=cnt>4?u32(e+8):e+8; let s=''; for(let i=0;i<Math.min(cnt,19);i++) s+=String.fromCharCode(dv.getUint8(t+off+i)); return s; };
   const ifd0=u32(4); let e=-1; const ex=read(ifd0,0x8769); if(ex>=0) e=read(u32(ex+8),0x9003); if(e<0) e=read(ifd0,0x0132); if(e<0) return null;
   const m=str(e).match(/(\d{4}):(\d{2}):(\d{2}) (\d{2}):(\d{2})/); return m? new Date(+m[1],m[2]-1,+m[3],+m[4],+m[5]).getTime() : null; }catch(_){ return null; } }
-const stampText = it => { const d = new Date((it&&(it.taken||it.date))||Date.now()); return "'"+String(d.getFullYear()).slice(2)+' '+(d.getMonth()+1)+' '+String(d.getDate()).padStart(2,'0'); };
+function stampText(it, fmt){ const d = new Date((it&&(it.taken||it.date))||Date.now()); fmt = fmt || 1;
+  const yy=String(d.getFullYear()).slice(2), m=d.getMonth()+1, dd=String(d.getDate()).padStart(2,'0');
+  return fmt===2 ? `${dd} ${m} '${yy}` : fmt===3 ? `${d.getFullYear()}.${String(m).padStart(2,'0')}.${dd}` : `'${yy} ${m} ${dd}`; }
 
 /* ================= album ================= */
 const stamp = d => { const p=n=>String(n).padStart(2,'0'); return `${d.getFullYear()}${p(d.getMonth()+1)}${p(d.getDate())}_${p(d.getHours())}${p(d.getMinutes())}${p(d.getSeconds())}`; };
-function updateCount(){ $('#albumCount').textContent = photos.length ? 'Альбом · '+photos.length : 'Альбом'; $('#sampleTag').hidden = photos.length>0 || mode==='cam'; }
+function updateCount(){ $('#albumCount').textContent = photos.length ? 'Альбом · '+photos.length : 'Альбом'; $('#sampleTag').hidden = true; }
 async function addItem({blob, name, exif, P:ip, crop:ic, img, taken}){
   const date = Date.now();
   const it = {id:'p'+date+Math.random().toString(36).slice(2,7), name, date, taken: taken||null, blob, exif, crop: ic||newCrop(), P: ip||{...P()}, thumb: img?await makeThumb(img):null};
@@ -276,26 +278,28 @@ async function addFiles(fl, {P:ip}={}){
     } catch(e){ toast('Не удалось открыть '+(f.name||'фото')+'.'); await new Promise(r=>setTimeout(r,1200)); }
     await tick(); }
   toast('');
-  if (first){ cur = photos.indexOf(first); useImage(firstImg); refreshBottom(); renderAlbum(); }
+  if (first){ cur = photos.indexOf(first); setMode('view'); useImage(firstImg); renderAlbum(); }
   return first;
 }
-async function select(i){ if (mode==='cam') await closeCam(true); cur=i; refreshBottom();
-  try { useImage(await decode(photos[i].blob)); } catch(e){ toast('Не удалось открыть фото.'); } }
+let loadSeq = 0;
+async function select(i, toMode){ if (mode==='cam') pauseCam(); cur=i; setMode(toMode||'view');
+  const seq = ++loadSeq;
+  try { const img = await decode(photos[i].blob); if (seq!==loadSeq){ img.close&&img.close(); return; } useImage(img); } catch(e){ toast('Не удалось открыть фото.'); } }
 $('#file').addEventListener('change', e => { addFiles(e.target.files); e.target.value=''; });
 
 let selecting = false, selected = new Set();
 function renderAlbum(){
   const g=$('#agrid'); g.innerHTML='';
-  const add=document.createElement('button'); add.type='button'; add.className='cell add'; add.innerHTML='<div><b>+</b><br>Из галереи</div>'; add.onclick=()=>$('#file').click(); g.appendChild(add);
+  const add=document.createElement('button'); add.type='button'; add.className='cell add'; add.innerHTML='<div><b>+</b>Из галереи</div>'; add.onclick=()=>$('#file').click(); g.appendChild(add);
   photos.forEach((p,i) => { const b=document.createElement('button'); b.type='button'; b.className='cell'+(i===cur?' cur':''); b.setAttribute('aria-label','Фото '+(i+1));
     if (selecting) b.setAttribute('aria-pressed', selected.has(p.id));
-    const im=document.createElement('img'); im.alt=''; if(!p.thumbURL && p.thumb) p.thumbURL=URL.createObjectURL(p.thumb); im.src=p.thumbURL||''; b.appendChild(im);
+    const im=document.createElement('img'); im.alt=''; im.loading='lazy'; if(!p.thumbURL && p.thumb) p.thumbURL=URL.createObjectURL(p.thumb); if (p.thumbURL) im.src=p.thumbURL; b.appendChild(im);
     if (selecting){ const t=document.createElement('i'); t.className='tick'; b.appendChild(t); }
-    b.onclick=()=>{ if (selecting){ selected.has(p.id)?selected.delete(p.id):selected.add(p.id); renderAlbum(); } else { closeAlbum(); select(i); } };
+    b.onclick=()=>{ if (selecting){ selected.has(p.id)?selected.delete(p.id):selected.add(p.id); renderAlbum(); } else { closeAlbum(); select(i,'view'); } };
     g.appendChild(b); });
   if (!photos.length){ const e=document.createElement('p'); e.className='aempty'; e.textContent='Здесь будут ваши снимки. Снимайте камерой или добавьте фото из галереи.'; g.appendChild(e); }
   $('#abar').hidden = !selecting; $('#albumSelect').textContent = selecting ? 'Отмена' : 'Выбрать';
-  $('#aDelete').disabled = !selected.size; $('#aApply').disabled = !selected.size;
+  ['#aDelete','#aApply','#aSave'].forEach(s => $(s).disabled = !selected.size);
   $('#aDelete').textContent = selected.size ? `Удалить (${selected.size})` : 'Удалить';
 }
 function openAlbum(){ selecting=false; selected.clear(); renderAlbum(); $('#album').hidden=false; }
@@ -306,56 +310,92 @@ $('#albumSelect').onclick = () => { selecting=!selecting; selected.clear(); rend
 $('#aApply').onclick = () => { const src={...P()}; delete src.fx; delete src.fy; let n=0;
   photos.forEach(p => { if (selected.has(p.id) && p!==item()){ p.P={...p.P, ...src}; persist(p); n++; } });
   toast(`Текущие настройки применены к ${n} фото`); selecting=false; selected.clear(); renderAlbum(); };
-$('#aDelete').onclick = () => { const n=selected.size; if(!n) return;
-  sheet({title:`Удалить ${n} фото из альбома?`, text:'В «Фото» на iPhone ничего не удалится.', actions:[{label:'Удалить', red:true, run:async()=>{
-    const curId = cur>=0?photos[cur].id:null;
-    for (const id of selected){ await DB.del(id).catch(()=>{}); const p=photos.find(x=>x.id===id); if(p&&p.thumbURL) URL.revokeObjectURL(p.thumbURL); }
-    photos = photos.filter(p=>!selected.has(p.id)); selected.clear(); selecting=false; updateCount();
-    const ni = photos.findIndex(p=>p.id===curId);
-    if (ni>=0) cur=ni; else if (photos.length){ await select(0); } else { cur=-1; useImage(sampleImg); refreshBottom(); }
-    renderAlbum(); }}]}); };
+$('#aSave').onclick = () => { const list = photos.filter(p=>selected.has(p.id)); selecting=false; selected.clear(); renderAlbum(); closeAlbum(); processAndOffer(list); };
+$('#aDelete').onclick = () => { const ids=new Set(selected); if(!ids.size) return;
+  sheet({title:`Удалить ${ids.size} фото из альбома?`, text:'В «Фото» на iPhone ничего не удалится.', actions:[{label:'Удалить', red:true, run:()=>deleteIds(ids)}]}); };
+async function deleteIds(ids){
+  const curId = cur>=0&&photos[cur]?photos[cur].id:null, oldCur=cur;
+  for (const id of ids){ await DB.del(id).catch(()=>{}); const p=photos.find(x=>x.id===id); if(p&&p.thumbURL) URL.revokeObjectURL(p.thumbURL); }
+  photos = photos.filter(p=>!ids.has(p.id)); selected.clear(); selecting=false; updateCount();
+  const ni = photos.findIndex(p=>p.id===curId);
+  if (ni>=0) cur=ni; else if (photos.length) await select(Math.min(Math.max(0,oldCur), photos.length-1), 'view'); else { cur=-1; useImage(sampleImg); setMode('view'); }
+  renderAlbum(); }
+
+/* ================= viewer / editor modes ================= */
+let editBackup = null;
+function setMode(m){
+  mode = m; const b=document.body; b.classList.toggle('cam', m==='cam'); b.classList.toggle('view', m==='view'); b.classList.toggle('edit', m==='edit');
+  const cam=m==='cam', view=m==='view', edit=m==='edit';
+  $('#openCam').hidden = !view; $('#closeCam').hidden = !cam; $('#cancelEdit').hidden = !edit;
+  $('#openAlbum').hidden = !view; $('#camToggles').hidden = !cam;
+  $('#editBtn').hidden = !view; $('#doneEdit').hidden = !edit; $('#flipCam').hidden = !cam || !multiCam;
+  $('#tgAdj').setAttribute('aria-pressed', adjOpen); $('#tgDate').setAttribute('aria-pressed', !!P().date); $('#tgFlash').setAttribute('aria-pressed', P().flash>.02);
+  $('#tgTap').setAttribute('aria-pressed', tapShoot); $('#tgTimer').setAttribute('aria-pressed', timerSec>0); $('#timerVal').textContent = timerSec?timerSec:'';
+  $('#lenses').hidden = !cam || !zoomChips.length;
+  updateCount(); updateViewerInfo(); builtTab=null; refreshBottom(); requestRender();
+}
+function updateViewerInfo(){ if (mode!=='view') return; const it = cur>=0?photos[cur]:null;
+  if (!it){ $('#vDate').textContent='Пример'; $('#vMeta').textContent='Снимите или добавьте фото'; return; }
+  const d=new Date(it.taken||it.date); $('#vDate').textContent = d.toLocaleDateString('ru-RU',{day:'numeric',month:'long'})+', '+d.toLocaleTimeString('ru-RU',{hour:'2-digit',minute:'2-digit'});
+  const pr = PRESETS.find(x=>x.id===it.P.preset); $('#vMeta').textContent = `${cur+1} из ${photos.length}` + (pr?' · '+pr.name:''); }
+$('#editBtn').onclick = () => { editBackup = {P:JSON.parse(JSON.stringify(P())), crop:{...crop()}}; setMode('edit'); };
+$('#doneEdit').onclick = () => { persist(item()); editBackup=null; setMode('view'); };
+$('#cancelEdit').onclick = () => { if (editBackup){ item().P = editBackup.P; item().crop = editBackup.crop; persist(item()); } editBackup=null; setMode('view'); };
+$('#vDel').onclick = () => { if (cur<0) return; const id=photos[cur].id; sheet({title:'Удалить это фото?', text:'Из альбома приложения. В «Фото» на iPhone ничего не удалится.', actions:[{label:'Удалить фото', red:true, run:()=>deleteIds(new Set([id]))}]}); };
+$('#vShare').onclick = () => processAndOffer([item()]);
+function stepPhoto(dir){ if (photos.length<2) return; const n = cur+dir; if (n<0||n>=photos.length){ toast(dir>0?'Это последнее фото':'Это первое фото',1000); return; } select(n,'view'); }
 
 /* ================= rendering ================= */
 let raf = 0, lastGeom = null, liveFrame = 0;
 const stageEl = $('#stage');
-function useImage(img){ E.setSource(img); loadedImg = img; requestRender(); }
+function useImage(img){ E.setSource(img); if (loadedImg && loadedImg!==img && loadedImg!==sampleImg) { loadedImg.close && loadedImg.close(); } loadedImg = img; requestRender(); }
 function requestRender(){ if (raf || mode==='cam') return; raf = requestAnimationFrame(() => { raf = 0; draw(); }); }
 function previewSize(g){
-  const dpr = Math.min(3, window.devicePixelRatio||1), aw = stageEl.clientWidth*dpr, ah = stageEl.clientHeight*dpr;
-  const s = Math.min(aw/g.cw, ah/g.ch, (mode==='cam'?1500:2600)/Math.max(g.cw,g.ch), 1);
-  return {w:Math.max(2,Math.round(g.cw*s)), h:Math.max(2,Math.round(g.ch*s)), dpr};
+  const dpr = Math.min(mode==='cam'?2:3, window.devicePixelRatio||1), aw = stageEl.clientWidth*dpr, ah = stageEl.clientHeight*dpr;
+  const s = Math.min(aw/g.cw, ah/g.ch, (mode==='cam'?1100:2000)/Math.max(g.cw,g.ch), 1);
+  return {w:Math.max(2,Math.round(g.cw*s)), h:Math.max(2,Math.round(g.ch*s)), cssW:g.cw*Math.min(aw/g.cw, ah/g.ch)/dpr, cssH:g.ch*Math.min(aw/g.cw, ah/g.ch)/dpr};
 }
 function draw(){
   if (!loadedImg && mode!=='cam') return;
-  const g = GLE.cropGeom(E.srcW, E.srcH, crop()); lastGeom = g;
+  const c = mode==='cam' ? {...crop(), zoom: crop().zoom*digitalZoom} : crop();
+  const g = GLE.cropGeom(E.srcW, E.srcH, c); lastGeom = g;
   const sz = previewSize(g);
   if (view.width!==sz.w || view.height!==sz.h){ view.width=sz.w; view.height=sz.h; }
-  view.style.width = (sz.w/sz.dpr)+'px'; view.style.height = (sz.h/sz.dpr)+'px';
-  E.setStamp(P().date ? stampText(mode==='cam'?null:item()) : null);
+  view.style.width = sz.cssW+'px'; view.style.height = sz.cssH+'px';
+  E.setStamp(P().date ? stampText(mode==='cam'?null:item(), P().date) : null);
   E.render(g, {...P(), seed: mode==='cam' ? (liveFrame*7919)>>>0 : 11}, {w:sz.w, h:sz.h, toScreen:true, bypass:compare});
   E.trim([sz.w+'x'+sz.h]);
   updateMarker();
 }
 new ResizeObserver(() => { requestRender(); drawDial(); }).observe(stageEl);
-function updateMarker(){ const m=$('#marker'); const on = P().flash>.02 && !(tab==='crop'&&mode!=='cam') && !compare; m.hidden=!on;
+function updateMarker(){ const m=$('#marker'); const on = P().flash>.02 && mode!=='view' && !(tab==='crop'&&mode==='edit') && !compare && !(mode==='cam'&&tapShoot); m.hidden=!on;
   if (on){ const x = view.classList.contains('mirror') ? 1-P().fx : P().fx; m.style.left=(x*100)+'%'; m.style.top=(P().fy*100)+'%'; } }
 
-/* gestures on the photo: hold = original, swipe = next filter, tap = aim flash, drag in crop = move frame */
-let down = null, holdT = 0;
-stageEl.addEventListener('pointerdown', e => { if (e.target.closest('button')) return; stageEl.setPointerCapture(e.pointerId); down = {x:e.clientX, y:e.clientY, x0:e.clientX, y0:e.clientY, t:Date.now(), moved:false, held:false};
-  const cropMode = tab==='crop' && mode!=='cam';
-  if (!cropMode) holdT = setTimeout(() => { if (down && !down.moved){ down.held=true; compare=true; $('#badge').hidden=false; updateMarker(); requestRender(); } }, 220); });
-stageEl.addEventListener('pointermove', e => { if (!down) return; const dx=e.clientX-down.x, dy=e.clientY-down.y;
+/* gestures: hold = original · swipe = next photo (viewer) / next filter (editor, camera) · tap = aim flash or shoot · pinch = zoom (camera) · drag in crop */
+const ptrs = new Map(); let down = null, holdT = 0, pinch = null;
+stageEl.addEventListener('pointerdown', e => { if (e.target.closest('button')) return; stageEl.setPointerCapture(e.pointerId); ptrs.set(e.pointerId,{x:e.clientX,y:e.clientY});
+  if (ptrs.size===2 && mode==='cam'){ clearTimeout(holdT); const [a,b]=[...ptrs.values()]; pinch={d:Math.hypot(a.x-b.x,a.y-b.y), z:zoomLevel}; down=null; return; }
+  if (ptrs.size>1) return;
+  down = {x:e.clientX, y:e.clientY, x0:e.clientX, y0:e.clientY, t:Date.now(), moved:false, held:false};
+  const cropMode = tab==='crop' && mode==='edit';
+  if (!cropMode && mode!=='cam') holdT = setTimeout(() => { if (down && !down.moved){ down.held=true; compare=true; $('#badge').hidden=false; updateMarker(); requestRender(); } }, 220); });
+stageEl.addEventListener('pointermove', e => { if (!ptrs.has(e.pointerId)) return; ptrs.set(e.pointerId,{x:e.clientX,y:e.clientY});
+  if (pinch && ptrs.size>=2){ const [a,b]=[...ptrs.values()]; const d=Math.hypot(a.x-b.x,a.y-b.y); setZoom(pinch.z*d/pinch.d, false); return; }
+  if (!down) return; const dx=e.clientX-down.x, dy=e.clientY-down.y;
   if (Math.hypot(e.clientX-down.x0, e.clientY-down.y0)>8) { down.moved = true; clearTimeout(holdT); }
-  if (tab==='crop' && mode!=='cam' && down.moved && lastGeom){ const r=view.getBoundingClientRect(), c=crop();
+  if (tab==='crop' && mode==='edit' && down.moved && lastGeom){ const r=view.getBoundingClientRect(), c=crop();
     const fx=dx*lastGeom.cw/r.width, fy=dy*lastGeom.ch/r.height, co=Math.cos(lastGeom.th), si=Math.sin(lastGeom.th);
     c.ox -= (co*fx-si*fy)/lastGeom.Sw; c.oy -= (si*fx+co*fy)/lastGeom.Sh; down.x=e.clientX; down.y=e.clientY; persist(item()); requestRender(); } });
-function endPointer(e){ clearTimeout(holdT); if (!down) return; const d=down; down=null;
+function endPointer(e){ ptrs.delete(e.pointerId);
+  if (pinch){ if (ptrs.size<2){ pinch=null; setZoom(zoomLevel, true); } return; }
+  clearTimeout(holdT); if (!down) return; const d=down; down=null;
   if (d.held){ compare=false; $('#badge').hidden=true; updateMarker(); requestRender(); return; }
   if (e.type!=='pointerup') return;
-  const dx=e.clientX-d.x0, dy=e.clientY-d.y0, cropMode = tab==='crop' && mode!=='cam';
-  if (!cropMode && Math.abs(dx)>50 && Math.abs(dx)>Math.abs(dy)*1.5 && Date.now()-d.t<700){ stepFilter(dx<0?1:-1); return; }
-  if (!d.moved && !cropMode && P().flash>.02){ const r=view.getBoundingClientRect(); let x=(e.clientX-r.left)/r.width; if(view.classList.contains('mirror')) x=1-x;
+  const dx=e.clientX-d.x0, dy=e.clientY-d.y0, cropMode = tab==='crop' && mode==='edit';
+  if (!cropMode && Math.abs(dx)>50 && Math.abs(dx)>Math.abs(dy)*1.5 && Date.now()-d.t<700){ if (mode==='view') stepPhoto(dx<0?1:-1); else stepFilter(dx<0?1:-1); return; }
+  if (d.moved || cropMode) return;
+  if (mode==='cam' && tapShoot){ shoot(); return; }
+  if (mode!=='view' && P().flash>.02){ const r=view.getBoundingClientRect(); let x=(e.clientX-r.left)/r.width; if(view.classList.contains('mirror')) x=1-x;
     if (x>=0&&x<=1){ P().fx=x; P().fy=Math.min(1,Math.max(0,(e.clientY-r.top)/r.height)); persist(item()); updateMarker(); requestRender(); } } }
 ['pointerup','pointercancel','lostpointercapture'].forEach(t => stageEl.addEventListener(t, endPointer));
 stageEl.addEventListener('contextmenu', e => e.preventDefault());
@@ -364,78 +404,110 @@ function stepFilter(dir){ const i = PRESETS.findIndex(p=>p.id===P().preset); con
 
 /* ================= camera ================= */
 const video = document.createElement('video'); video.playsInline = true; video.muted = true; video.setAttribute('playsinline',''); video.setAttribute('muted','');
-let stream = null, camRaf = 0, facing = 'environment', multiCam = false, lensList = [], lensId = null, camPaused = false;
-function stopStream(){ if (stream){ stream.getTracks().forEach(t=>t.stop()); stream=null; } }
+let stream = null, camRaf = 0, facing = 'environment', multiCam = false, camPaused = false, tapShoot = false, timerSec = 0;
+let hwZoom = null, zoomLevel = 1, digitalZoom = 1, lensList = [], lensId = null, zoomChips = [];
+try { const s = JSON.parse(localStorage.getItem('myl_cam')||'{}'); tapShoot=!!s.tap; timerSec=s.timer|0; } catch(_){}
+const saveCamPrefs = () => { try { localStorage.setItem('myl_cam', JSON.stringify({tap:tapShoot, timer:timerSec})); } catch(_){} };
+const track = () => stream && stream.getVideoTracks()[0];
+function streamAlive(){ const t=track(); return t && t.readyState==='live'; }
 async function startStream(){
-  stopStream();
+  if (stream){ stream.getTracks().forEach(t=>t.stop()); stream=null; }
   const size = {width:{ideal:4032}, height:{ideal:3024}};
   stream = await navigator.mediaDevices.getUserMedia({audio:false, video: lensId ? {deviceId:{exact:lensId}, ...size} : {facingMode:facing, ...size}});
   video.srcObject = stream; await video.play();
   view.classList.toggle('mirror', facing==='user');
+  const t = track(), caps = t.getCapabilities ? t.getCapabilities() : {};
+  hwZoom = caps && caps.zoom && caps.zoom.max>caps.zoom.min ? {min:caps.zoom.min, max:caps.zoom.max, f: /ultra|triple|dual wide|сверхшир|тройн/i.test(t.label)?.5:1} : null;
 }
-async function listLenses(){
+async function findLenses(){
   try { const devs = (await navigator.mediaDevices.enumerateDevices()).filter(d=>d.kind==='videoinput'); multiCam = devs.length>1;
-    const back = devs.filter(d=>!/front|фронт|передн/i.test(d.label)), virt = /dual|triple|двойн|тройн/i;
+    const back = devs.filter(d=>!/front|фронт|передн/i.test(d.label)), virt=/dual|triple|двойн|тройн/i;
     const uw = back.find(d=>/ultra|сверхширок/i.test(d.label)&&!virt.test(d.label)), tele = back.find(d=>/tele|теле/i.test(d.label)&&!virt.test(d.label));
     const wide = back.find(d=>!/ultra|сверхширок|tele|теле/i.test(d.label)&&!virt.test(d.label));
-    lensList = [uw&&{id:uw.deviceId,t:'.5'}, wide&&{id:wide.deviceId,t:'1×'}, tele&&{id:tele.deviceId,t:'3'}].filter(Boolean);
+    lensList = [uw&&{id:uw.deviceId,f:.5}, wide&&{id:wide.deviceId,f:1}, tele&&{id:tele.deviceId,f:3}].filter(Boolean);
   } catch(_) { lensList = []; }
-  const el = $('#lenses'); el.innerHTML=''; el.style.bottom='12px';
-  if (facing==='environment' && lensList.length>1){ lensList.forEach(l=>{ const b=document.createElement('button'); b.type='button'; b.textContent=l.t; b.setAttribute('aria-pressed', l.id===lensId || (!lensId && l.t==='1×'));
-      b.onclick=async()=>{ lensId=l.id; try{ await startStream(); }catch(e){ toast('Не удалось переключить объектив.'); } listLenses(); }; el.appendChild(b); }); el.hidden=false; }
-  else el.hidden = true;
-  $('#flipCam').hidden = !multiCam;
+}
+function buildZoomChips(){
+  const minZ = hwZoom ? hwZoom.min*hwZoom.f : (facing==='environment' && lensList.some(l=>l.f===.5) ? .5 : 1);
+  const maxZ = hwZoom ? Math.min(15, hwZoom.max*hwZoom.f) : 5*(lensList.some(l=>l.f===3)?3:1);
+  zoomChips = [.5,1,2,3,5].filter(z=>z>=minZ-1e-3 && z<=maxZ+1e-3);
+  if (facing==='user') zoomChips = [];
+  const el=$('#lenses'); el.innerHTML=''; el.style.bottom='12px';
+  zoomChips.forEach(z => { const b=document.createElement('button'); b.type='button'; b.dataset.z=z; b.onclick=()=>setZoom(z,true); el.appendChild(b); });
+  zoomRange = [minZ, maxZ]; paintZoom(); el.hidden = mode!=='cam' || !zoomChips.length;
+}
+let zoomRange = [1,5];
+function fmtZ(z){ return (z<1? String(Math.round(z*10)/10).replace('0.','.') : (Math.round(z*10)/10).toString().replace('.',','))+'×'; }
+function paintZoom(){ $('#lenses').querySelectorAll('button').forEach((b,i) => { const z=+b.dataset.z, next=zoomChips[i+1]||99;
+  const active = zoomLevel>=z-1e-3 && zoomLevel<next-1e-3; b.classList.toggle('on', active); b.setAttribute('aria-pressed', active); b.textContent = active ? fmtZ(zoomLevel) : (z<1?'.5':String(z)); }); }
+let zoomBusy = false;
+async function setZoom(z, commit){
+  z = Math.min(zoomRange[1], Math.max(zoomRange[0], z)); zoomLevel = z; paintZoom();
+  const zv=$('#zoomv'); zv.textContent=fmtZ(z); zv.hidden=false; clearTimeout(setZoom.t); setZoom.t=setTimeout(()=>zv.hidden=true, 900);
+  if (hwZoom){ digitalZoom = 1; const v = Math.min(hwZoom.max, Math.max(hwZoom.min, z/hwZoom.f)); try { await track().applyConstraints({advanced:[{zoom:v}]}); } catch(_){} return; }
+  // no hardware zoom: pick the physical lens on release, crop digitally in between
+  const lens = lensList.length>1 ? lensList.filter(l=>l.f<=z+1e-3).sort((a,b)=>b.f-a.f)[0] || lensList[0] : null;
+  const f = lens ? lens.f : 1; digitalZoom = Math.max(1, z/f);
+  if (commit && lens && lens.id!==lensId && !zoomBusy){ zoomBusy=true; lensId=lens.id; try { await startStream(); } catch(_){ toast('Не удалось переключить объектив.'); } zoomBusy=false; }
 }
 const hasRVFC = 'requestVideoFrameCallback' in HTMLVideoElement.prototype; let slowMs = 0;
-function camLoop(){ if (mode!=='cam') return;
+function camLoop(){ if (mode!=='cam' || camPaused) { camRaf=0; return; }
   let dt = 0;
-  if (video.readyState>=2 && !camPaused){ const t0=performance.now(); E.setSource(video,{live:true}); liveFrame++; draw(); if (liveFrame%10===0){ E.gl.finish(); slowMs=performance.now()-t0; } dt=Math.max(performance.now()-t0, slowMs); }
-  const wait = dt>28 ? Math.min(400, dt*1.5) : 0;   // slow GPU: leave room for touches and UI
-  const next = () => setTimeout(camLoop, wait);
-  if (hasRVFC) video.requestVideoFrameCallback(next); else camRaf = requestAnimationFrame(next); }
-function setModeUI(){ const cam = mode==='cam'; document.body.classList.toggle('cam', cam);
-  $('#openCam').hidden = cam; $('#closeCam').hidden = !cam; $('#openAlbum').hidden = cam; $('#camToggles').hidden = !cam; $('#save').hidden = cam; $('#flipCam').hidden = !cam || !multiCam;
-  $('#tgAdj').setAttribute('aria-pressed', adjOpen); $('#tgDate').setAttribute('aria-pressed', !!P().date); $('#tgFlash').setAttribute('aria-pressed', P().flash>.02);
-  updateCount(); builtTab=null; refreshBottom(); }
+  if (video.readyState>=2){ const t0=performance.now(); E.setSource(video,{live:true}); liveFrame++; draw(); if (liveFrame%10===0){ E.gl.finish(); slowMs=performance.now()-t0; } dt=Math.max(performance.now()-t0, slowMs); }
+  const wait = Math.max(dt>24 ? Math.min(400, dt*1.4) : 0, 1000/30 - dt);   // cap at ~30 fps to keep the phone cool
+  const next = () => setTimeout(camLoop, Math.max(0,wait));
+  camRaf = 1; if (hasRVFC) video.requestVideoFrameCallback(next); else requestAnimationFrame(next); }
+function pauseCam(){ camPaused = true; const t=track(); if (t) t.enabled = false; }
 async function openCam(){
   if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia){ toast('Камера недоступна в этом браузере. Используйте HQ или добавьте фото из альбома.'); return; }
-  const keep = {...P()}; mode='cam'; camState.P = keep; adjOpen=false; setModeUI();
-  try { await startStream(); await listLenses(); setModeUI(); camLoop(); }
-  catch(e){ toast(e && e.name==='NotAllowedError' ? 'Нет доступа к камере. Разрешите его: Настройки → Safari → Камера.' : 'Не удалось включить камеру.', 4000); closeCam(); }
+  camState.P = {...P(), preset:P().preset}; adjOpen=false; camPaused=false; setMode('cam');
+  try {
+    if (streamAlive()){ track().enabled = true; }               // reuse the stream: no new permission prompt
+    else { await startStream(); await findLenses(); }
+    buildZoomChips(); setMode('cam'); if (!camRaf) camLoop();
+  } catch(e){ toast(e && e.name==='NotAllowedError' ? 'Нет доступа к камере. Разрешите: Настройки → Safari → Камера → Разрешить.' : 'Не удалось включить камеру.', 4500); closeCam(); }
 }
-async function closeCam(skipReload){
-  cancelAnimationFrame(camRaf); stopStream(); mode='edit'; view.classList.remove('mirror'); $('#lenses').hidden=true; $('#shotmsg').hidden=true; setModeUI();
-  if (!skipReload){ if (cur>=0){ try{ useImage(await decode(photos[cur].blob)); }catch(_){ } } else useImage(sampleImg); }
+async function closeCam(){
+  pauseCam(); view.classList.remove('mirror'); $('#shotmsg').hidden=true; $('#zoomv').hidden=true; setMode('view');
+  if (cur>=0){ try{ useImage(await decode(photos[cur].blob)); }catch(_){ } } else useImage(sampleImg);
 }
 $('#openCam').onclick = openCam;
 $('#closeCam').onclick = () => closeCam();
-$('#flipCam').onclick = async () => { facing = facing==='environment' ? 'user' : 'environment'; lensId=null; try{ await startStream(); await listLenses(); }catch(e){ toast('Не удалось сменить камеру.'); } };
-$('#tgAdj').onclick = () => { adjOpen=!adjOpen; setModeUI(); };
-$('#tgDate').onclick = () => { P().date = P().date?0:1; setModeUI(); toast(P().date?'Дата в углу включена':'Дата выключена', 1200); };
-$('#tgFlash').onclick = () => { P().flash = P().flash>.02 ? 0 : .8; if (P().flash){ P().fx=.5; P().fy=.48; } P().preset=null; setModeUI(); toast(P().flash?'Вспышка: коснитесь кадра, чтобы навести':'Вспышка выключена', 1500); };
-document.addEventListener('visibilitychange', () => { if (mode!=='cam') return; if (document.hidden) stopStream(); else startStream().catch(()=>{}); });
+$('#flipCam').onclick = async () => { facing = facing==='environment' ? 'user' : 'environment'; lensId=null; zoomLevel=1; digitalZoom=1; try{ await startStream(); buildZoomChips(); }catch(e){ toast('Не удалось сменить камеру.'); } };
+$('#tgAdj').onclick = () => { adjOpen=!adjOpen; setMode('cam'); };
+$('#tgDate').onclick = () => { P().date = P().date?0:1; setMode('cam'); toast(P().date?'Дата в углу включена':'Дата выключена', 1200); };
+$('#tgFlash').onclick = () => { P().flash = P().flash>.02 ? 0 : .75; if (P().flash){ P().fx=.5; P().fy=.48; } P().preset=null; setMode('cam'); toast(P().flash?'Вспышка включена':'Вспышка выключена', 1200); };
+$('#tgTap').onclick = () => { tapShoot=!tapShoot; saveCamPrefs(); setMode('cam'); toast(tapShoot?'Снимок по касанию кадра':'Касание кадра наводит вспышку', 1500); };
+$('#tgTimer').onclick = () => { timerSec = timerSec===0?3:timerSec===3?10:0; saveCamPrefs(); setMode('cam'); toast(timerSec?'Таймер '+timerSec+' с':'Таймер выключен', 1200); };
+document.addEventListener('visibilitychange', () => { if (mode!=='cam') return;
+  if (!document.hidden && !streamAlive()) startStream().then(()=>{ buildZoomChips(); if(!camRaf) camLoop(); }).catch(()=>{}); });
 
-let lastShot = null, shotT = 0;
-$('#shutter').onclick = async () => {
-  if (video.readyState<2) return;
+let lastShot = null, shotT = 0, counting = false;
+async function shoot(){
+  if (video.readyState<2 || counting) return;
+  if (timerSec){ counting=true; const cd=$('#countdown'); for (let s=timerSec;s>0;s--){ cd.textContent=s; cd.hidden=false; await new Promise(r=>setTimeout(r,1000)); } cd.hidden=true; counting=false; }
   const fx=$('#flashfx'); fx.classList.add('on'); setTimeout(()=>fx.classList.remove('on'),60);
   const w=video.videoWidth, h=video.videoHeight, c=document.createElement('canvas'); c.width=w; c.height=h;
   const g=c.getContext('2d'); if (view.classList.contains('mirror')){ g.translate(w,0); g.scale(-1,1); } g.drawImage(video,0,0);
   camPaused = true;
   try {
     const blob = await new Promise(r => c.toBlob(r,'image/jpeg',.96));
-    const it = await addItem({blob, name:'MYL_'+stamp(new Date())+'.jpg', exif:null, img:c, P:{...camState.P}, crop:{...camState.crop}, taken:Date.now()});
-    E.setSource(c); const r = exportWith(it); lastShot = {name: outName(it), bytes:r.bytes};
+    const it = await addItem({blob, name:'MYL_'+stamp(new Date())+'.jpg', exif:null, img:c, P:{...camState.P}, crop:{...camState.crop, zoom:camState.crop.zoom*digitalZoom}, taken:Date.now()});
+    E.setSource(c); const r = exportWith(it); lastShot = {name: outName(it), bytes:r.bytes}; unsaved.push(lastShot);
     $('#lastShot').innerHTML=''; const im=document.createElement('img'); im.alt=''; it.thumbURL=URL.createObjectURL(it.thumb); im.src=it.thumbURL; $('#lastShot').appendChild(im);
-    $('#shottext').textContent = 'Снято · '+r.W+'×'+r.H; $('#shotmsg').hidden=false; clearTimeout(shotT); shotT=setTimeout(()=>$('#shotmsg').hidden=true, 6000);
+    $('#shottext').textContent = unsaved.length>1 ? `Снято · ${unsaved.length} не в Фото` : 'Снято · '+r.W+'×'+r.H;
+    $('#shotSave').textContent = unsaved.length>1 ? `В Фото (${unsaved.length})` : 'В Фото';
+    $('#shotmsg').hidden=false; clearTimeout(shotT); shotT=setTimeout(()=>$('#shotmsg').hidden=true, 7000);
     cur = 0;
   } catch(e){ toast('Не удалось сохранить кадр.'); }
-  camPaused = false;
-};
-$('#shotSave').onclick = () => { if (lastShot) shareFiles([lastShot]); };
-$('#lastShot').onclick = async () => { if (!photos.length) return; await closeCam(true); await select(0); };
+  camPaused = false; if (!camRaf) camLoop();
+}
+let unsaved = [];
+$('#shutter').onclick = shoot;
+$('#shotSave').onclick = async () => { if (!unsaved.length) return; const list=unsaved.slice(); if (await shareFiles(list)) { unsaved = []; $('#shotmsg').hidden=true; } };
+$('#lastShot').onclick = async () => { if (!photos.length) return; pauseCam(); view.classList.remove('mirror'); await select(0,'view'); };
 $('#nativeCam').addEventListener('change', async e => { const f=e.target.files[0]; e.target.value=''; if(!f) return;
-  const ip = {...camState.P}; if (mode==='cam') await closeCam(true);
+  const ip = {...camState.P}; if (mode==='cam'){ pauseCam(); view.classList.remove('mirror'); }
   const it = await addFiles([f], {P:ip}); if (it) toast('Снято камерой iPhone в полном качестве', 2500); });
 
 /* ================= export & save ================= */
@@ -443,7 +515,7 @@ const outName = p => (p&&p.name ? p.name.replace(/\.[^.]+$/,'') : 'mylnitsa')+'_
 function exportWith(it){
   const g = GLE.cropGeom(E.srcW, E.srcH, it.crop); let W=Math.round(g.cw), H=Math.round(g.ch);
   const L=Math.max(W,H); if (L>MAX_SRC){ const s=MAX_SRC/L; W=Math.round(W*s); H=Math.round(H*s); }
-  E.setStamp(it.P.date ? stampText(it) : null);
+  E.setStamp(it.P.date ? stampText(it, it.P.date) : null);
   const t = E.render(g, {...it.P, seed:11}, {w:W, h:H, toScreen:false, flip:true}); const px = E.read(t); E.dropSet(W,H);
   return {bytes: RC.encodeJPEG(px, W, H, 95, '444', it.exif||null), W, H};
 }
@@ -458,7 +530,7 @@ async function shareFiles(files){
   return true;
 }
 function sheet({title, text, actions, progress}){
-  const m=$('#sheetMain'); m.innerHTML = `<div class="msg">${title?`<b>${esc(title)}</b>`:''}${text?esc(text):''}</div>${progress?'<div class="progress"><i id="prog"></i></div>':''}`;
+  const m=$('#sheetMain'); m.innerHTML = `${title||text?`<div class="msg">${title?`<b>${esc(title)}</b>`:''}${text?esc(text):''}</div>`:''}${progress?'<div class="progress"><i id="prog"></i></div>':''}`;
   (actions||[]).forEach(a => { const b=document.createElement('button'); b.type='button'; b.className='act'+(a.red?' red':'')+(a.bold?' bold':''); b.textContent=a.label; b.onclick=()=>{ closeSheet(); a.run(); }; m.appendChild(b); });
   $('#sheet').hidden=false; $('#sheetCancel').hidden = !!progress;
 }
@@ -466,10 +538,11 @@ function closeSheet(){ $('#sheet').hidden=true; }
 $('#sheetCancel').onclick = closeSheet;
 $('#sheet').addEventListener('click', e => { if (e.target.id==='sheet' && !$('#sheetCancel').hidden) closeSheet(); });
 async function processAndOffer(list){
+  if (!list.length) return;
   sheet({title:'Обрабатываю в полном размере…', progress:true});
   const out=[]; const keepImg = loadedImg;
   for (let i=0;i<list.length;i++){ const it=list[i];
-    $('#sheetMain .msg').innerHTML = `<b>Обрабатываю в полном размере…</b>${i+1} из ${list.length}`; const pg=$('#prog'); if(pg) pg.style.width=(i/list.length*100)+'%';
+    const msg=$('#sheetMain .msg'); if (msg) msg.innerHTML = `<b>Обрабатываю в полном размере…</b>${i+1} из ${list.length}`; const pg=$('#prog'); if(pg) pg.style.width=(i/list.length*100)+'%';
     await frame(); await tick();
     try { const img = it===sample ? sampleImg : (it===photos[cur] && loadedImg) ? loadedImg : await decode(it.blob); E.setSource(img);
       const r = exportWith(it); out.push({name:outName(it), bytes:r.bytes, W:r.W, H:r.H}); if (img!==loadedImg && img!==sampleImg) img.close && img.close(); }
@@ -477,25 +550,20 @@ async function processAndOffer(list){
   if (keepImg){ E.setSource(keepImg); requestRender(); }
   if (!out.length){ closeSheet(); return; }
   const mb = out.reduce((s,f)=>s+f.bytes.length,0)/1048576, one = out.length===1 ? `${out[0].W}×${out[0].H}, ` : '';
-  sheet({title: out.length===1 ? 'Фото готово' : `Готово: ${out.length} фото`, text: `${one}${fmt1(mb)} МБ, JPEG 95%. В меню выберите «Сохранить изображение».`,
-    actions:[{label: out.length===1 ? 'Сохранить в Фото' : `Сохранить ${out.length} фото`, bold:true, run:()=>shareFiles(out)}]});
+  sheet({title: out.length===1 ? 'Фото готово' : `Готово: ${out.length} фото`, text: `${one}${fmt1(mb)} МБ, JPEG 95%. Затем в меню нажмите «Сохранить изображение».`,
+    actions:[{label: out.length===1 ? 'Сохранить в Фото' : `Сохранить ${out.length} фото`, bold:true, run:()=>shareFiles(out)},
+             {label:'Запомнить настройки как пресет', run:savePresetFromCurrent}]});
 }
-$('#save').onclick = () => {
-  const acts = [{label:'Сохранить это фото', bold:true, run:()=>processAndOffer([item()])}];
-  if (photos.length>1) acts.push({label:`Сохранить весь альбом (${photos.length})`, run:()=>processAndOffer(photos.slice())});
-  acts.push({label:'Запомнить настройки как пресет', run:()=>{ const list=loadMine(); const p={...P()}; delete p.fx; delete p.fy; delete p.preset; delete p.date;
-    const name='Мой '+(list.length+1); list.push({name, p}); saveMine(list); builtTab=null; refreshBottom(); toast('Пресет «'+name+'» добавлен в фильтры'); }});
-  sheet({actions:acts});
-};
+function savePresetFromCurrent(){ const list=loadMine(); const p={...P()}; delete p.fx; delete p.fy; delete p.preset; delete p.date;
+  const name='Мой '+(list.length+1); list.push({name, p}); saveMine(list); builtTab=null; refreshBottom(); toast('Пресет «'+name+'» добавлен в фильтры'); }
 
 /* ================= start ================= */
 (async () => {
   sampleImg = makeSample();
   try { const recs = await DB.all(); photos = recs.sort((a,b)=>b.date-a.date).map(r=>({...r})); } catch(_) { photos = []; }
-  setModeUI();
-  if (photos.length){ cur=0; refreshBottom(); try{ useImage(await decode(photos[0].blob)); }catch(_){ useImage(sampleImg); } }
-  else useImage(sampleImg);
+  if (photos.length){ cur=0; setMode('view'); try{ useImage(await decode(photos[0].blob)); }catch(_){ useImage(sampleImg); } }
+  else { setMode('view'); useImage(sampleImg); }
   if ('serviceWorker' in navigator && location.protocol.startsWith('http')) navigator.serviceWorker.register('sw.js').catch(()=>{});
 })();
-window.__myl = {E, get photos(){return photos;}, exportWith, get mode(){return mode;}, get P(){return P();}, render:()=>requestRender()};
+window.__myl = {E, get photos(){return photos;}, exportWith, get mode(){return mode;}, get P(){return P();}, render:()=>requestRender(), setZoom};
 })();
