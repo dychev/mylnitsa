@@ -334,7 +334,7 @@ function setMode(m){
   $('#tgAdj').setAttribute('aria-pressed', adjOpen); $('#tgDate').setAttribute('aria-pressed', !!P().date); $('#tgFlash').setAttribute('aria-pressed', P().flash>.02);
   $('#tgTap').setAttribute('aria-pressed', tapShoot); $('#tgTimer').setAttribute('aria-pressed', timerSec>0); $('#timerVal').textContent = timerSec?timerSec:'';
   $('#lenses').hidden = !cam || !zoomChips.length;
-  $('#tgGrid').setAttribute('aria-pressed', gridOn); if (cam) $('#grid').hidden = !gridOn;
+  $('#tgGrid').setAttribute('aria-pressed', gridOn); $('#tgOrient').setAttribute('aria-pressed', orientRot!==0); if (cam) $('#grid').hidden = !gridOn;
   updateCount(); updateViewerInfo(); builtTab=null; refreshBottom(); requestRender();
 }
 function updateViewerInfo(){ if (mode!=='view') return; const it = cur>=0?photos[cur]:null;
@@ -417,7 +417,7 @@ let stream = null, camRaf = 0, facing = 'environment', multiCam = false, camPaus
 let camExpo = 0, expoAt = null, hwExpo = null, gridOn = false, lastFrameT = 0, lastVT = -1;
 let hwZoom = null, zoomLevel = 1, digitalZoom = 1, lensList = [], lensId = null, zoomChips = [];
 try { const s = JSON.parse(localStorage.getItem('myl_cam')||'{}'); tapShoot=!!s.tap; timerSec=s.timer|0; gridOn=!!s.grid; } catch(_){}
-const saveCamPrefs = () => { try { localStorage.setItem('myl_cam', JSON.stringify({tap:tapShoot, timer:timerSec, grid:gridOn})); } catch(_){} };
+const saveCamPrefs = () => { try { localStorage.setItem('myl_cam', JSON.stringify({tap:tapShoot, timer:timerSec, grid:gridOn, orient:orientRot})); } catch(_){} };
 /* exposure: tap a point, drag up/down — like the sun slider in the iPhone camera */
 function setExpo(v, at){
   camExpo = Math.max(-2, Math.min(2, Math.round(v*20)/20));
@@ -428,23 +428,13 @@ function setExpo(v, at){
   if (P().flash>.02 && at){ const r=view.getBoundingClientRect(); let x=(at.x-r.left)/r.width; if(view.classList.contains('mirror')) x=1-x; if(x>=0&&x<=1){ P().fx=x; P().fy=Math.min(1,Math.max(0,(at.y-r.top)/r.height)); } }
 }
 /* orientation from the motion sensor: horizontal shots get rotated like in the iPhone camera */
-let grav = null, motionState = 'none', uiRot = 0;   // none | asking | on | denied
-function onMotion(ev){ if (ev.gamma==null || ev.beta==null) return; grav={b:ev.beta, g:ev.gamma};
-  const r = rotFromGravity(); if (r!==uiRot){ uiRot=r; document.body.dataset.rot=r; } }
-function askMotion(){ if (motionState==='on' || motionState==='denied' || motionState==='asking') return;
-  const on = () => { motionState='on'; window.addEventListener('deviceorientation', onMotion); };
-  try {
-    if (window.DeviceOrientationEvent && typeof DeviceOrientationEvent.requestPermission==='function'){ motionState='asking';
-      DeviceOrientationEvent.requestPermission().then(s=>{ if(s==='granted') on(); else motionState='denied'; }).catch(()=>{ motionState='none'; }); }
-    else on();
-  } catch(_){ motionState='none'; }
-}
-['touchend','click'].forEach(t => document.addEventListener(t, askMotion, true));
-/* deviceorientation is spec-consistent on iOS and Android: gamma = left/right tilt, beta = front/back tilt */
-function rotFromGravity(){ if (!grav) return 0; const {b,g}=grav;
-  if (Math.abs(g)>50) return g<0 ? 3 : 1;      // landscape: top of the phone to the left → 3, to the right → 1
-  if (b < -50) return 2;                        // upside down
-  return 0; }
+/* orientation without motion sensors (no permission prompts): a button picks how the phone is held */
+let orientRot = 0;
+try { orientRot = (JSON.parse(localStorage.getItem('myl_cam')||'{}').orient)|0; } catch(_){}
+function askMotion(){}
+function rotFromGravity(){ return orientRot; }
+const ORIENT_LABEL = {0:'Вертикально', 3:'Горизонтально, верх слева', 1:'Горизонтально, верх справа'};
+
 const track = () => stream && stream.getVideoTracks()[0];
 function streamAlive(){ const t=track(); return t && t.readyState==='live'; }
 async function startStream(){
@@ -528,6 +518,8 @@ $('#tgTimer').onclick = () => { timerSec = timerSec===0?3:timerSec===3?10:0; sav
 document.addEventListener('visibilitychange', () => { if (mode!=='cam' || document.hidden) return; lastFrameT=performance.now();
   if (!streamAlive()) startStream().then(()=>{ buildZoomChips(); if(!camRaf) camLoop(); }).catch(()=>{}); else { video.play().catch(()=>{}); if(!camRaf) camLoop(); } });
 $('#tgGrid').onclick = () => { gridOn=!gridOn; saveCamPrefs(); setMode('cam'); };
+$('#tgOrient').onclick = () => { orientRot = orientRot===0 ? 3 : orientRot===3 ? 1 : 0; saveCamPrefs(); document.body.dataset.rot = orientRot; setMode('cam'); toast(ORIENT_LABEL[orientRot], 1300); };
+document.body.dataset.rot = orientRot;
 
 let lastShot = null, shotT = 0, counting = false;
 async function shoot(){
