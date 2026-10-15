@@ -617,7 +617,12 @@ view.addEventListener('webglcontextrestored', () => { clearTimeout(ctxT);
   try { const recs = await DB.all(); photos = recs.sort((a,b)=>b.date-a.date).map(r=>({...r})); } catch(_) { photos = []; }
   if (photos.length){ cur=0; setMode('view'); try{ useImage(await decode(photos[0].blob)); }catch(_){ useImage(sampleImg); } }
   else { setMode('view'); useImage(sampleImg); }
-  if ('serviceWorker' in navigator && location.protocol.startsWith('http')) navigator.serviceWorker.register('sw.js').catch(()=>{});
+  if ('serviceWorker' in navigator && location.protocol.startsWith('http')){
+    // when a new version finishes downloading, switch to it right away instead of on the next launch
+    const hadCtrl = !!navigator.serviceWorker.controller; let reloaded = false;
+    navigator.serviceWorker.addEventListener('controllerchange', () => { if (hadCtrl && !reloaded){ reloaded = true; location.reload(); } });
+    navigator.serviceWorker.register('sw.js').then(r => r.update()).catch(()=>{});
+  }
   openCam();   // ph-y starts in the camera
 })();
 window.__myl = {E, get photos(){return photos;}, exportWith, get mode(){return mode;}, get P(){return P();}, render:()=>requestRender(), setZoom};
