@@ -9,12 +9,21 @@ let toastT = 0;
 function toast(t, ms){ const el=$('#toast'); if(!t){ el.hidden=true; return; } el.textContent=t; el.hidden=false; clearTimeout(toastT); toastT=setTimeout(()=>el.hidden=true, ms||2600); }
 
 /* ================= storage ================= */
+/* v9: the original file lives in its own store and is written once. Settings/crop edits only rewrite the small
+   meta record, so Safari never invalidates a Blob that is still in use ("не удалось открыть" after rotate/edit). */
 const DB = (() => {
   let dbp = null;
-  const open = () => dbp || (dbp = new Promise((res, rej) => { const r = indexedDB.open('mylnitsa', 1);
-    r.onupgradeneeded = () => r.result.createObjectStore('photos', {keyPath:'id'}); r.onsuccess = () => res(r.result); r.onerror = () => rej(r.error); }));
-  const tx = async (mode, fn) => { const db = await open(); return new Promise((res, rej) => { const t = db.transaction('photos', mode); const out = fn(t.objectStore('photos')); t.oncomplete = () => res(out && out.result); t.onerror = () => rej(t.error); }); };
-  return { all: () => tx('readonly', st => st.getAll()), put: rec => tx('readwrite', st => st.put(rec)), del: id => tx('readwrite', st => st.delete(id)) };
+  const open = () => dbp || (dbp = new Promise((res, rej) => { const r = indexedDB.open('mylnitsa', 2);
+    r.onupgradeneeded = () => { const db = r.result; if (!db.objectStoreNames.contains('photos')) db.createObjectStore('photos', {keyPath:'id'}); if (!db.objectStoreNames.contains('blobs')) db.createObjectStore('blobs', {keyPath:'id'}); };
+    r.onsuccess = () => res(r.result); r.onerror = () => rej(r.error); }));
+  const tx = async (stores, mode, fn) => { const db = await open(); return new Promise((res, rej) => { const t = db.transaction(stores, mode); const out = fn(t); t.oncomplete = () => res(out && out.result); t.onerror = () => rej(t.error); t.onabort = () => rej(t.error); }); };
+  return {
+    all: () => tx('photos', 'readonly', t => t.objectStore('photos').getAll()),
+    put: meta => tx('photos', 'readwrite', t => t.objectStore('photos').put(meta)),
+    add: (meta, blob) => tx(['photos','blobs'], 'readwrite', t => { t.objectStore('blobs').put({id:meta.id, blob}); t.objectStore('photos').put(meta); }),
+    blob: id => tx('blobs', 'readonly', t => t.objectStore('blobs').get(id)).then(r => r ? r.blob : null),
+    del: id => tx(['photos','blobs'], 'readwrite', t => { t.objectStore('photos').delete(id); t.objectStore('blobs').delete(id); }),
+  };
 })();
 try { navigator.storage && navigator.storage.persist && navigator.storage.persist(); } catch(_) {}
 
@@ -194,14 +203,14 @@ function buildCropItems(){
     b.innerHTML=`<div class="ring" style="--v:0">${icon}</div><span>${label}</span>`; b.onclick=fn; itemsEl.appendChild(b); };
   it('angle','Выпрямить',ICON.angle,()=>{ cropParam='angle'; refreshBottom(); },'angle');
   it('zoom','Масштаб',ICON.zoom,()=>{ cropParam='zoom'; refreshBottom(); },'zoom');
-  it('rot','Повернуть',ICON.rot,()=>{ const c=crop(); c.rot=(c.rot+1)%4; c.ox=0; c.oy=0; cropChanged(); });
+  it('rot','Повернуть',ICON.rot,()=>{ const c=crop(); c.rot=(c.rot+3)%4; c.ox=0; c.oy=0; cropChanged(); });
   it('reset','Сбросить',ICON.reset,()=>{ Object.assign(crop(),newCrop()); cropChanged(); refreshBottom(); });
   ASPECTS.forEach(([a,t],i) => { const b=document.createElement('button'); b.type='button'; b.className='chip'; b.style.alignSelf='center'; b.dataset.asp=String(a); b.id='asp-'+i; b.textContent=t;
     b.onclick=()=>{ const c=crop(); c.aspect=a; c.ox=0; c.oy=0; cropChanged(); refreshBottom(); }; itemsEl.appendChild(b); });
 }
 
 /* ================= state changes ================= */
-const rec = p => ({id:p.id, name:p.name, date:p.date, taken:p.taken, blob:p.blob, exif:p.exif, crop:p.crop, P:p.P, thumb:p.thumb});
+const rec = p => ({id:p.id, name:p.name, date:p.date, taken:p.taken, bs:true, exif:p.exif, crop:p.crop, P:p.P, thumb:p.thumb});
 function persist(p){ if (!p || !p.id) return; clearTimeout(p._t); p._t = setTimeout(() => DB.put(rec(p)).catch(()=>{}), 400); }
 function changed(fromDial, keepPreset){
   if (!keepPreset) P().preset = null;
@@ -230,18 +239,19 @@ const loadMine = () => { try { return JSON.parse(localStorage.getItem('myl_prese
 const saveMine = l => { try { localStorage.setItem('myl_presets', JSON.stringify(l)); return true; } catch(_) { return false; } };
 
 /* ================= decoding ================= */
-function capImage(bm){ const L = Math.max(bm.width, bm.height); if (L <= MAX_SRC) return bm;
-  const s = MAX_SRC/L, c = document.createElement('canvas'); c.width=Math.round(bm.width*s); c.height=Math.round(bm.height*s);
+function capImage(bm, maxL){ maxL = maxL || MAX_SRC; const L = Math.max(bm.width, bm.height); if (L <= maxL) return bm;
+  const s = maxL/L, c = document.createElement('canvas'); c.width=Math.round(bm.width*s); c.height=Math.round(bm.height*s);
   const g = c.getContext('2d'); g.imageSmoothingQuality='high'; g.drawImage(bm,0,0,c.width,c.height); bm.close && bm.close(); return c; }
 let heicReady = null;
 function loadHeic(){ if (window.heic2any) return Promise.resolve(); if (heicReady) return heicReady;
   heicReady = new Promise((res, rej) => { const s=document.createElement('script'); s.src='heic2any.min.js'; s.onload=res; s.onerror=()=>{ heicReady=null; rej(new Error('heic-lib')); }; document.head.appendChild(s); }); return heicReady; }
 const isHeic = f => /hei[cf]/i.test(f.type||'') || /\.hei[cf]$/i.test(f.name||'');
-async function decode(blob){
-  try { return capImage(await createImageBitmap(blob, {imageOrientation:'from-image'})); } catch(_) {}
+async function decode(blob, maxL){
+  if (!blob) throw new Error('noblob');
+  try { return capImage(await createImageBitmap(blob, {imageOrientation:'from-image'}), maxL); } catch(_) {}
   try { const url=URL.createObjectURL(blob); const im=await new Promise((res,rej)=>{ const i=new Image(); i.onload=()=>res(i); i.onerror=rej; i.src=url; });
-    const c=document.createElement('canvas'); c.width=im.naturalWidth; c.height=im.naturalHeight; c.getContext('2d').drawImage(im,0,0); URL.revokeObjectURL(url); return capImage(c); } catch(_) {}
-  if (isHeic(blob)) { await loadHeic(); const out = await window.heic2any({blob, toType:'image/png'}); return capImage(await createImageBitmap(Array.isArray(out)?out[0]:out)); }
+    const c=document.createElement('canvas'); c.width=im.naturalWidth; c.height=im.naturalHeight; c.getContext('2d').drawImage(im,0,0); URL.revokeObjectURL(url); return capImage(c, maxL); } catch(_) {}
+  if (isHeic(blob)) { await loadHeic(); const out = await window.heic2any({blob, toType:'image/png'}); return capImage(await createImageBitmap(Array.isArray(out)?out[0]:out), maxL); }
   throw new Error('decode');
 }
 async function makeThumb(img, rot){ const S=240, c=document.createElement('canvas'); c.width=S; c.height=S; const g=c.getContext('2d');
@@ -259,6 +269,12 @@ function stampText(it, fmt){ const d = new Date((it&&(it.taken||it.date))||Date.
   const yy=String(d.getFullYear()).slice(2), m=d.getMonth()+1, dd=String(d.getDate()).padStart(2,'0');
   return fmt===2 ? `${dd} ${m} '${yy}` : fmt===3 ? `${d.getFullYear()}.${String(m).padStart(2,'0')}.${dd}` : `'${yy} ${m} ${dd}`; }
 
+/* v9: blobs are loaded lazily from their own store; a failed read is retried once from the database */
+async function blobOf(it){ if (!it.blob) it.blob = await DB.blob(it.id); return it.blob; }
+async function decodeItem(it, maxL){
+  try { return await decode(await blobOf(it), maxL); }
+  catch(e){ it.blob = null; const b = await DB.blob(it.id).catch(()=>null); if (!b) throw e; it.blob = b; return decode(b, maxL); } }
+
 /* ================= album ================= */
 const stamp = d => { const p=n=>String(n).padStart(2,'0'); return `${d.getFullYear()}${p(d.getMonth()+1)}${p(d.getDate())}_${p(d.getHours())}${p(d.getMinutes())}${p(d.getSeconds())}`; };
 function updateCount(){ $('#albumCount').textContent = photos.length ? 'Альбом · '+photos.length : 'Альбом'; $('#sampleTag').hidden = true; }
@@ -266,7 +282,7 @@ async function addItem({blob, name, exif, P:ip, crop:ic, img, taken}){
   const date = Date.now();
   const it = {id:'p'+date+Math.random().toString(36).slice(2,7), name, date, taken: taken||null, blob, exif, crop: ic||newCrop(), P: ip||{...P()}, thumb: img?await makeThumb(img, (ic&&ic.rot)||0):null};
   photos.unshift(it); if (cur>=0) cur++;
-  try { await DB.put(rec(it)); } catch(e){ toast('Не хватает места: фото не сохранено в альбоме приложения.'); }
+  try { await DB.add(rec(it), blob); } catch(e){ toast('Не хватает места: фото не сохранено в альбоме приложения.'); }
   updateCount(); return it;
 }
 async function addFiles(fl, {P:ip}={}){
@@ -283,10 +299,27 @@ async function addFiles(fl, {P:ip}={}){
   if (first){ cur = photos.indexOf(first); setMode('view'); useImage(firstImg); renderAlbum(); }
   return first;
 }
-let loadSeq = 0;
-async function select(i, toMode){ if (mode==='cam') pauseCam(); cur=i; setMode(toMode||'view');
-  const seq = ++loadSeq;
-  try { const img = await decode(photos[i].blob); if (seq!==loadSeq){ img.close&&img.close(); return; } useImage(img); } catch(e){ toast('Не удалось открыть фото.'); } }
+/* v9: viewer keeps the current photo and its neighbours decoded (screen-size copies), and switches only when the
+   next one is ready — no flash of the old photo with the new rotation or without its filter */
+const VIEW_MAX = 2560, imgCache = new Map(), cachedImgs = new Set();
+function getView(it){ let p = imgCache.get(it.id);
+  if (!p){ p = decodeItem(it, VIEW_MAX).then(img => { cachedImgs.add(img); return img; }); imgCache.set(it.id, p); p.catch(() => imgCache.delete(it.id)); }
+  return p; }
+function trimCache(keep){ for (const [id,p] of imgCache) if (!keep.has(id)){ imgCache.delete(id);
+  p.then(img => { cachedImgs.delete(img); if (img!==loadedImg) img.close && img.close(); }).catch(()=>{}); } }
+function prefetch(){ if (cur<0) return; const keep = new Set([cur-1,cur,cur+1].filter(i=>i>=0&&i<photos.length).map(i=>photos[i].id)); trimCache(keep);
+  clearTimeout(prefetch.t); prefetch.t = setTimeout(() => { [cur+1,cur-1].forEach(i => { if (photos[i]) getView(photos[i]).catch(()=>{}); }); }, 250); }
+let loadSeq = 0, want = -1;
+function resumeCam(){ camPaused = false; const t=track(); if (t) t.enabled = true; if (!camRaf) camLoop(); }
+async function select(i, toMode){ const it = photos[i]; if (!it) return false;
+  const fromCam = mode==='cam'; if (fromCam) pauseCam();
+  const seq = ++loadSeq; want = i; let img;
+  try { img = await getView(it); }
+  catch(e){ if (seq===loadSeq){ want=-1; toast('Не удалось открыть фото.'); if (fromCam && mode==='cam') resumeCam(); } return false; }
+  if (seq!==loadSeq) return false;
+  want = -1; const n = photos.indexOf(it); if (n<0) return false;
+  cur = n; if (mode==='cam') view.classList.remove('mirror');
+  setMode(toMode||'view'); useImage(img); prefetch(); return true; }
 $('#file').addEventListener('change', e => { addFiles(e.target.files); e.target.value=''; });
 
 let selecting = false, selected = new Set();
@@ -330,11 +363,11 @@ function setMode(m){
   const cam=m==='cam', view=m==='view', edit=m==='edit';
   $('#openCam').hidden = !view; $('#closeCam').hidden = !cam; $('#cancelEdit').hidden = !edit;
   $('#openAlbum').hidden = !view; $('#camToggles').hidden = !cam;
-  $('#editBtn').hidden = !view; $('#doneEdit').hidden = !edit; $('#flipCam').hidden = !cam || !multiCam;
+  $('#editBtn').hidden = !view; $('#doneEdit').hidden = !edit; $('#flipCam').style.visibility = multiCam ? '' : 'hidden';
   $('#tgAdj').setAttribute('aria-pressed', adjOpen); $('#tgDate').setAttribute('aria-pressed', !!P().date); $('#tgFlash').setAttribute('aria-pressed', P().flash>.02);
   $('#tgTap').setAttribute('aria-pressed', tapShoot); $('#tgTimer').setAttribute('aria-pressed', timerSec>0); $('#timerVal').textContent = timerSec?timerSec:'';
   $('#lenses').hidden = !cam || !zoomChips.length;
-  $('#tgGrid').setAttribute('aria-pressed', gridOn); $('#tgOrient').setAttribute('aria-pressed', orientRot!==0); if (cam) $('#grid').hidden = !gridOn;
+  $('#tgGrid').setAttribute('aria-pressed', gridOn); if (cam) $('#grid').hidden = !gridOn;
   updateCount(); updateViewerInfo(); builtTab=null; refreshBottom(); requestRender();
 }
 function updateViewerInfo(){ if (mode!=='view') return; const it = cur>=0?photos[cur]:null;
@@ -346,14 +379,14 @@ $('#doneEdit').onclick = () => { persist(item()); editBackup=null; setMode('view
 $('#cancelEdit').onclick = () => { if (editBackup){ item().P = editBackup.P; item().crop = editBackup.crop; persist(item()); } editBackup=null; setMode('view'); };
 $('#vDel').onclick = () => { if (cur<0) return; const id=photos[cur].id; sheet({title:'Удалить это фото?', text:'Из альбома приложения. В «Фото» на iPhone ничего не удалится.', actions:[{label:'Удалить фото', red:true, run:()=>deleteIds(new Set([id]))}]}); };
 $('#vShare').onclick = () => processAndOffer([item()]);
-$('#vRot').onclick = async () => { if (cur<0) return; const it=photos[cur]; it.crop.rot=(it.crop.rot+1)%4; it.crop.ox=0; it.crop.oy=0; persist(it); requestRender();
+$('#vRot').onclick = async () => { if (cur<0) return; const it=photos[cur]; it.crop.rot=(it.crop.rot+3)%4; it.crop.ox=0; it.crop.oy=0; persist(it); requestRender();
   if (loadedImg){ it.thumb = await makeThumb(loadedImg, it.crop.rot); if (it.thumbURL) URL.revokeObjectURL(it.thumbURL); it.thumbURL=null; persist(it); } };
-function stepPhoto(dir){ if (photos.length<2) return; const n = cur+dir; if (n<0||n>=photos.length){ toast(dir>0?'Это последнее фото':'Это первое фото',1000); return; } select(n,'view'); }
+function stepPhoto(dir){ if (photos.length<2) return; const n = (want>=0?want:cur)+dir; if (n<0||n>=photos.length){ toast(dir>0?'Это последнее фото':'Это первое фото',1000); return; } select(n,'view'); }
 
 /* ================= rendering ================= */
 let raf = 0, lastGeom = null, liveFrame = 0;
 const stageEl = $('#stage');
-function useImage(img){ E.setSource(img); if (loadedImg && loadedImg!==img && loadedImg!==sampleImg) { loadedImg.close && loadedImg.close(); } loadedImg = img; requestRender(); }
+function useImage(img){ E.setSource(img); if (loadedImg && loadedImg!==img && loadedImg!==sampleImg && !cachedImgs.has(loadedImg)) { loadedImg.close && loadedImg.close(); } loadedImg = img; requestRender(); }
 function requestRender(){ if (raf || mode==='cam') return; raf = requestAnimationFrame(() => { raf = 0; draw(); }); }
 function previewSize(g){
   const dpr = Math.min(mode==='cam'?2:3, window.devicePixelRatio||1), aw = stageEl.clientWidth*dpr, ah = stageEl.clientHeight*dpr;
@@ -389,6 +422,8 @@ stageEl.addEventListener('pointermove', e => { if (!ptrs.has(e.pointerId)) retur
   if (pinch && ptrs.size>=2){ const [a,b]=[...ptrs.values()]; const d=Math.hypot(a.x-b.x,a.y-b.y); setZoom(pinch.z*d/pinch.d, false); return; }
   if (!down) return; const dx=e.clientX-down.x, dy=e.clientY-down.y;
   if (Math.hypot(e.clientX-down.x0, e.clientY-down.y0)>8) { down.moved = true; clearTimeout(holdT); }
+  if (mode==='view' && down.moved && !down.held && (down.vDrag || (e.clientY-down.y0>12 && e.clientY-down.y0>Math.abs(e.clientX-down.x0)*1.3))){
+    down.vDrag = true; const d=Math.max(0,e.clientY-down.y0); view.style.transition='none'; view.style.transform=`translateY(${d}px) scale(${1-Math.min(.25,d/1600)})`; view.style.opacity=String(1-Math.min(.5,d/700)); return; }
   if (mode==='cam' && !tapShoot && down.moved && (down.evDrag || Math.abs(e.clientY-down.y0)>Math.abs(e.clientX-down.x0)*1.3)){
     down.evDrag = true; setExpo(down.ev0 - (e.clientY-down.y0)/170, expoAt||{x:down.x0,y:down.y0}); return; }
   if (tab==='crop' && mode==='edit' && down.moved && lastGeom){ const r=view.getBoundingClientRect(), c=crop();
@@ -398,10 +433,14 @@ function endPointer(e){ ptrs.delete(e.pointerId);
   if (pinch){ if (ptrs.size<2){ pinch=null; setZoom(zoomLevel, true); } return; }
   clearTimeout(holdT); if (!down) return; const d=down; down=null;
   if (d.held){ compare=false; $('#badge').hidden=true; updateMarker(); requestRender(); return; }
+  if (d.vDrag){ const dy=e.clientY-d.y0, fast=dy>40 && Date.now()-d.t<350;
+    view.style.transition='transform .2s, opacity .2s'; view.style.transform=''; view.style.opacity='';
+    if (e.type==='pointerup' && (dy>110 || fast)) openAlbum(); return; }
   if (e.type!=='pointerup' || d.evDrag) return;
   const dx=e.clientX-d.x0, dy=e.clientY-d.y0, cropMode = tab==='crop' && mode==='edit';
   if (!cropMode && Math.abs(dx)>50 && Math.abs(dx)>Math.abs(dy)*1.5 && Date.now()-d.t<700){ if (mode==='view') stepPhoto(dx<0?1:-1); else stepFilter(dx<0?1:-1); return; }
   if (d.moved || cropMode) return;
+  if (mode==='view'){ const sr=stageEl.getBoundingClientRect(), fx=(e.clientX-sr.left)/sr.width; if (fx<.25) stepPhoto(-1); else if (fx>.75) stepPhoto(1); return; }
   if (mode==='cam' && tapShoot){ shoot(); return; }
   if (mode==='cam'){ const sr=stageEl.getBoundingClientRect(); expoAt={x:e.clientX,y:e.clientY}; setExpo(0, expoAt); }
   if (mode!=='view' && P().flash>.02){ const r=view.getBoundingClientRect(); let x=(e.clientX-r.left)/r.width; if(view.classList.contains('mirror')) x=1-x;
@@ -417,7 +456,7 @@ let stream = null, camRaf = 0, facing = 'environment', multiCam = false, camPaus
 let camExpo = 0, expoAt = null, hwExpo = null, gridOn = false, lastFrameT = 0, lastVT = -1;
 let hwZoom = null, zoomLevel = 1, digitalZoom = 1, lensList = [], lensId = null, zoomChips = [];
 try { const s = JSON.parse(localStorage.getItem('myl_cam')||'{}'); tapShoot=!!s.tap; timerSec=s.timer|0; gridOn=!!s.grid; } catch(_){}
-const saveCamPrefs = () => { try { localStorage.setItem('myl_cam', JSON.stringify({tap:tapShoot, timer:timerSec, grid:gridOn, orient:orientRot})); } catch(_){} };
+const saveCamPrefs = () => { try { localStorage.setItem('myl_cam', JSON.stringify({tap:tapShoot, timer:timerSec, grid:gridOn})); } catch(_){} };
 /* exposure: tap a point, drag up/down — like the sun slider in the iPhone camera */
 function setExpo(v, at){
   camExpo = Math.max(-2, Math.min(2, Math.round(v*20)/20));
@@ -429,11 +468,7 @@ function setExpo(v, at){
 }
 /* orientation from the motion sensor: horizontal shots get rotated like in the iPhone camera */
 /* orientation without motion sensors (no permission prompts): a button picks how the phone is held */
-let orientRot = 0;
-try { orientRot = (JSON.parse(localStorage.getItem('myl_cam')||'{}').orient)|0; } catch(_){}
 function askMotion(){}
-function rotFromGravity(){ return orientRot; }
-const ORIENT_LABEL = {0:'Вертикально', 3:'Горизонтально, верх слева', 1:'Горизонтально, верх справа'};
 
 const track = () => stream && stream.getVideoTracks()[0];
 function streamAlive(){ const t=track(); return t && t.readyState==='live'; }
@@ -446,7 +481,11 @@ async function startStream(){
   const t = track(), caps = t.getCapabilities ? t.getCapabilities() : {};
   hwExpo = caps && caps.exposureCompensation && caps.exposureCompensation.max>caps.exposureCompensation.min ? caps.exposureCompensation : null;
   lastFrameT = performance.now();
-  hwZoom = caps && caps.zoom && caps.zoom.max>caps.zoom.min ? {min:caps.zoom.min, max:caps.zoom.max, f: /ultra|triple|dual wide|сверхшир|тройн/i.test(t.label)?.5:1} : null;
+  /* v9: Safari reports zoom of the multi-camera device already in iPhone units (min 0.5 = ultra wide). Earlier builds
+     halved it again, so the ".5" chip actually gave 1×. Only when min is 1 on a wide+ultra device does 1 mean ultra wide. */
+  const virt = /dual|triple|двойн|тройн|bündel/i.test(t.label||'');
+  hwZoom = caps && caps.zoom && caps.zoom.max>caps.zoom.min ? {min:caps.zoom.min, max:caps.zoom.max, virt: virt || caps.zoom.min<1,
+    f: caps.zoom.min<1 ? 1 : (virt && /triple|dual wide|тройн|широк/i.test(t.label) ? .5 : 1)} : null;
 }
 async function findLenses(){
   try { const devs = (await navigator.mediaDevices.enumerateDevices()).filter(d=>d.kind==='videoinput'); multiCam = devs.length>1;
@@ -456,9 +495,11 @@ async function findLenses(){
     lensList = [uw&&{id:uw.deviceId,f:.5}, wide&&{id:wide.deviceId,f:1}, tele&&{id:tele.deviceId,f:3}].filter(Boolean);
   } catch(_) { lensList = []; }
 }
+const physLenses = () => facing==='environment' && lensList.length>1 && !(hwZoom && hwZoom.virt);
 function buildZoomChips(){
-  const minZ = hwZoom ? hwZoom.min*hwZoom.f : (facing==='environment' && lensList.some(l=>l.f===.5) ? .5 : 1);
-  const maxZ = hwZoom ? Math.min(15, hwZoom.max*hwZoom.f) : 5*(lensList.some(l=>l.f===3)?3:1);
+  const phys = physLenses(), fs = lensList.map(l=>l.f);
+  const minZ = phys ? Math.min(...fs) : hwZoom ? Math.max(.5, hwZoom.min*hwZoom.f) : 1;
+  const maxZ = phys ? Math.min(15, Math.max(...fs)*5) : hwZoom ? Math.min(15, hwZoom.max*hwZoom.f) : 5;
   zoomChips = [.5,1,2,3,5].filter(z=>z>=minZ-1e-3 && z<=maxZ+1e-3);
   if (facing==='user') zoomChips = [];
   const el=$('#lenses'); el.innerHTML=''; el.style.bottom='12px';
@@ -473,11 +514,15 @@ let zoomBusy = false;
 async function setZoom(z, commit){
   z = Math.min(zoomRange[1], Math.max(zoomRange[0], z)); zoomLevel = z; paintZoom();
   const zv=$('#zoomv'); zv.textContent=fmtZ(z); zv.hidden=false; clearTimeout(setZoom.t); setZoom.t=setTimeout(()=>zv.hidden=true, 900);
-  if (hwZoom){ digitalZoom = 1; const v = Math.min(hwZoom.max, Math.max(hwZoom.min, z/hwZoom.f)); try { await track().applyConstraints({advanced:[{zoom:v}]}); } catch(_){} return; }
-  // no hardware zoom: pick the physical lens on release, crop digitally in between
-  const lens = lensList.length>1 ? lensList.filter(l=>l.f<=z+1e-3).sort((a,b)=>b.f-a.f)[0] || lensList[0] : null;
-  const f = lens ? lens.f : 1; digitalZoom = Math.max(1, z/f);
-  if (commit && lens && lens.id!==lensId && !zoomBusy){ zoomBusy=true; lensId=lens.id; try { await startStream(); } catch(_){ toast('Не удалось переключить объектив.'); } zoomBusy=false; }
+  const hw = v => { if (!hwZoom) return; v = Math.min(hwZoom.max, Math.max(hwZoom.min, v)); const tr=track(); tr && tr.applyConstraints({advanced:[{zoom:v}]}).catch(()=>{}); };
+  // multi-camera device: iOS switches ultra wide / wide / tele by itself
+  if (hwZoom && !physLenses()){ digitalZoom = 1; hw(z/hwZoom.f); return; }
+  // separate lenses: pick the right one on release, zoom (hardware or crop) inside it
+  if (physLenses()){ const lens = lensList.filter(l=>l.f<=z+1e-3).sort((a,b)=>b.f-a.f)[0] || lensList[0];
+    if (commit && lens.id!==lensId && !zoomBusy){ zoomBusy=true; const old=lensId; lensId=lens.id;
+      try { await startStream(); } catch(_){ lensId=old; toast('Не удалось переключить объектив.'); try{ await startStream(); }catch(_){} } zoomBusy=false; } }
+  const curF = (lensList.find(l=>l.id===lensId) || {f:1}).f, rel = Math.max(1, zoomLevel/curF);
+  if (hwZoom){ digitalZoom = 1; hw(rel); } else digitalZoom = rel;
 }
 const hasRVFC = 'requestVideoFrameCallback' in HTMLVideoElement.prototype; let slowMs = 0;
 function camLoop(){ if (mode!=='cam' || camPaused) { camRaf=0; return; }
@@ -495,22 +540,24 @@ setInterval(async () => { if (mode!=='cam' || camPaused || document.hidden || !s
   else if (idle>=6000){ lastFrameT=performance.now(); try { await startStream(); buildZoomChips(); if(!camRaf) camLoop(); } catch(_){ } }
 }, 1500);
 async function openCam(){
-  if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia){ toast('Камера недоступна в этом браузере. Используйте HQ или добавьте фото из альбома.'); return; }
+  if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia){ toast('Камера недоступна в этом браузере. Добавьте фото из галереи через альбом.'); return; }
   camState.P = {...P(), preset:P().preset}; adjOpen=false; camPaused=false; camExpo=0; lastFrameT=performance.now(); setMode('cam');
   try {
     if (streamAlive()){ track().enabled = true; try { await video.play(); } catch(_){} }   // reuse the stream: no new permission prompt
     else { await startStream(); await findLenses(); }
-    buildZoomChips(); setMode('cam'); if (!camRaf) camLoop();
+    buildZoomChips(); setMode('cam'); if (!camRaf) camLoop(); setZoom(zoomLevel, false);
+    const lb=$('#lastShot'); if (!lb.firstChild && photos[0] && photos[0].thumb){ if(!photos[0].thumbURL) photos[0].thumbURL=URL.createObjectURL(photos[0].thumb); const im=document.createElement('img'); im.alt=''; im.src=photos[0].thumbURL; lb.appendChild(im); }
   } catch(e){ toast(e && e.name==='NotAllowedError' ? 'Нет доступа к камере. Разрешите: Настройки → Safari → Камера → Разрешить.' : 'Не удалось включить камеру.', 4500); closeCam(); }
 }
 async function closeCam(){
-  pauseCam(); view.classList.remove('mirror'); $('#shotmsg').hidden=true; $('#zoomv').hidden=true; setMode('view');
-  if (cur>=0){ try{ useImage(await decode(photos[cur].blob)); }catch(_){ } } else useImage(sampleImg);
+  pauseCam(); view.classList.remove('mirror'); $('#shotmsg').hidden=true; $('#zoomv').hidden=true;
+  if (cur>=0 && await select(cur,'view')) return;
+  if (mode==='cam'){ setMode('view'); useImage(cur>=0 && loadedImg ? loadedImg : sampleImg); }
 }
 $('#openCam').onclick = openCam;
 $('#closeCam').onclick = () => closeCam();
-$('#flipCam').onclick = async () => { facing = facing==='environment' ? 'user' : 'environment'; lensId=null; zoomLevel=1; digitalZoom=1; try{ await startStream(); buildZoomChips(); }catch(e){ toast('Не удалось сменить камеру.'); } };
-$('#tgAdj').onclick = () => { adjOpen=!adjOpen; setMode('cam'); };
+$('#flipCam').onclick = async () => { if (zoomBusy) return; facing = facing==='environment' ? 'user' : 'environment'; lensId=null; zoomLevel=1; digitalZoom=1; try{ await startStream(); buildZoomChips(); setZoom(1,false); }catch(e){ toast('Не удалось сменить камеру.'); } };
+$('#tgAdj').onclick = () => { adjOpen=!adjOpen; setMode('cam'); if (adjOpen) toast('Настройки кадра: выберите параметр и крутите шкалу', 1600); };
 $('#tgDate').onclick = () => { P().date = P().date?0:1; setMode('cam'); toast(P().date?'Дата в углу включена':'Дата выключена', 1200); };
 $('#tgFlash').onclick = () => { P().flash = P().flash>.02 ? 0 : .75; if (P().flash){ P().fx=.5; P().fy=.48; } P().preset=null; setMode('cam'); toast(P().flash?'Вспышка включена':'Вспышка выключена', 1200); };
 $('#tgTap').onclick = () => { tapShoot=!tapShoot; saveCamPrefs(); setMode('cam'); toast(tapShoot?'Снимок по касанию кадра':'Касание кадра наводит вспышку', 1500); };
@@ -518,8 +565,6 @@ $('#tgTimer').onclick = () => { timerSec = timerSec===0?3:timerSec===3?10:0; sav
 document.addEventListener('visibilitychange', () => { if (mode!=='cam' || document.hidden) return; lastFrameT=performance.now();
   if (!streamAlive()) startStream().then(()=>{ buildZoomChips(); if(!camRaf) camLoop(); }).catch(()=>{}); else { video.play().catch(()=>{}); if(!camRaf) camLoop(); } });
 $('#tgGrid').onclick = () => { gridOn=!gridOn; saveCamPrefs(); setMode('cam'); };
-$('#tgOrient').onclick = () => { orientRot = orientRot===0 ? 3 : orientRot===3 ? 1 : 0; saveCamPrefs(); document.body.dataset.rot = orientRot; setMode('cam'); toast(ORIENT_LABEL[orientRot], 1300); };
-document.body.dataset.rot = orientRot;
 
 let lastShot = null, shotT = 0, counting = false;
 async function shoot(){
@@ -535,7 +580,7 @@ async function shoot(){
   if (!ok){ toast('Камера не отдала кадр. Попробуйте ещё раз.', 2500); lastFrameT = 0; return; }
   try {
     const blob = await new Promise(r => c.toBlob(r,'image/jpeg',.95));
-    const rot = facing==='user' ? 0 : rotFromGravity();
+    const rot = 0;
     const ip = {...camState.P, ev:(camState.P.ev||0) + (hwExpo?0:camExpo)};
     const it = await addItem({blob, name:'PHY_'+stamp(new Date())+'.jpg', exif:null, img:c, P:ip, crop:{...camState.crop, rot, zoom:camState.crop.zoom*digitalZoom}, taken:Date.now()});
     unsaved.push(it);
@@ -551,10 +596,7 @@ const probe = document.createElement('canvas'); probe.width = probe.height = 12;
 function isBlack(c){ try { const g=probe.getContext('2d',{willReadFrequently:true}); g.drawImage(c,0,0,12,12); const d=g.getImageData(0,0,12,12).data; let m=0; for(let i=0;i<d.length;i+=4) m=Math.max(m,d[i],d[i+1],d[i+2]); return m<6; } catch(_){ return false; } }
 $('#shutter').onclick = shoot;
 $('#shotSave').onclick = async () => { if (!unsaved.length) return; const list=unsaved.filter(p=>photos.includes(p)); unsaved=[]; $('#shotmsg').hidden=true; await processAndOffer(list); };
-$('#lastShot').onclick = async () => { if (!photos.length) return; pauseCam(); view.classList.remove('mirror'); await select(0,'view'); };
-$('#nativeCam').addEventListener('change', async e => { const f=e.target.files[0]; e.target.value=''; if(!f) return;
-  const ip = {...camState.P}; if (mode==='cam'){ pauseCam(); view.classList.remove('mirror'); }
-  const it = await addFiles([f], {P:ip}); if (it) toast('Снято камерой iPhone в полном качестве', 2500); });
+$('#lastShot').onclick = async () => { if (!photos.length) return; await select(0,'view'); };
 
 /* ================= export & save ================= */
 const outName = p => (p&&p.name ? p.name.replace(/\.[^.]+$/,'') : 'ph-y')+'_ph-y.jpg';
@@ -590,7 +632,7 @@ async function processAndOffer(list){
   for (let i=0;i<list.length;i++){ const it=list[i];
     const msg=$('#sheetMain .msg'); if (msg) msg.innerHTML = `<b>Обрабатываю в полном размере…</b>${i+1} из ${list.length}`; const pg=$('#prog'); if(pg) pg.style.width=(i/list.length*100)+'%';
     await frame(); await tick();
-    try { const img = it===sample ? sampleImg : (mode!=='cam' && it===photos[cur] && loadedImg) ? loadedImg : await decode(it.blob); E.setSource(img);
+    try { const img = it===sample ? sampleImg : await decodeItem(it); E.setSource(img);   // always the full-size original
       const r = exportWith(it); out.push({name:outName(it), bytes:r.bytes, W:r.W, H:r.H}); if (img!==loadedImg && img!==sampleImg) img.close && img.close(); }
     catch(e){ toast('Не удалось обработать '+it.name); } }
   if (keepImg){ E.setSource(keepImg); requestRender(); }
@@ -615,7 +657,9 @@ view.addEventListener('webglcontextrestored', () => { clearTimeout(ctxT);
 (async () => {
   sampleImg = makeSample();
   try { const recs = await DB.all(); photos = recs.sort((a,b)=>b.date-a.date).map(r=>({...r})); } catch(_) { photos = []; }
-  if (photos.length){ cur=0; setMode('view'); try{ useImage(await decode(photos[0].blob)); }catch(_){ useImage(sampleImg); } }
+  // v9 migration: move originals out of the meta records (once)
+  for (const p of photos) if (!p.bs){ try { if (p.blob){ const m = rec(p); await DB.add(m, p.blob); } p.bs = true; } catch(_){} p.blob = null; }
+  if (photos.length){ cur=0; if (!(await select(0,'view'))){ setMode('view'); useImage(sampleImg); } }
   else { setMode('view'); useImage(sampleImg); }
   if ('serviceWorker' in navigator && location.protocol.startsWith('http')){
     // when a new version finishes downloading, switch to it right away instead of on the next launch
@@ -625,5 +669,5 @@ view.addEventListener('webglcontextrestored', () => { clearTimeout(ctxT);
   }
   openCam();   // ph-y starts in the camera
 })();
-window.__myl = {E, get photos(){return photos;}, exportWith, get mode(){return mode;}, get P(){return P();}, render:()=>requestRender(), setZoom};
+window.__myl = {E, get photos(){return photos;}, exportWith, get mode(){return mode;}, get P(){return P();}, render:()=>requestRender(), setZoom, select, get cur(){return cur;}, get hwZoom(){return hwZoom;}, get zoomChips(){return zoomChips;}, get digitalZoom(){return digitalZoom;}, imgCache};
 })();
