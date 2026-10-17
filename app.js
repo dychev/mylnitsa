@@ -210,7 +210,7 @@ function buildCropItems(){
 }
 
 /* ================= state changes ================= */
-const rec = p => ({id:p.id, name:p.name, date:p.date, taken:p.taken, bs:true, exif:p.exif, crop:p.crop, P:p.P, thumb:p.thumb});
+const rec = p => ({id:p.id, name:p.name, date:p.date, taken:p.taken, bs:true, exif:p.exif, crop:p.crop, P:p.P, thumb:p.thumb, fav:!!p.fav, saved:p.saved});
 function persist(p){ if (!p || !p.id) return; clearTimeout(p._t); p._t = setTimeout(() => DB.put(rec(p)).catch(()=>{}), 400); }
 function changed(fromDial, keepPreset){
   if (!keepPreset) P().preset = null;
@@ -280,7 +280,7 @@ const stamp = d => { const p=n=>String(n).padStart(2,'0'); return `${d.getFullYe
 function updateCount(){ $('#albumCount').textContent = photos.length ? 'Альбом · '+photos.length : 'Альбом'; $('#sampleTag').hidden = true; }
 async function addItem({blob, name, exif, P:ip, crop:ic, img, taken}){
   const date = Date.now();
-  const it = {id:'p'+date+Math.random().toString(36).slice(2,7), name, date, taken: taken||null, blob, exif, crop: ic||newCrop(), P: ip||{...P()}, thumb: img?await makeThumb(img, (ic&&ic.rot)||0):null};
+  const it = {id:'p'+date+Math.random().toString(36).slice(2,7), name, date, taken: taken||null, blob, exif, crop: ic||newCrop(), P: ip||{...P()}, thumb: img?await makeThumb(img, (ic&&ic.rot)||0):null, fav:false, saved:false};
   photos.unshift(it); if (cur>=0) cur++;
   try { await DB.add(rec(it), blob); } catch(e){ toast('Не хватает места: фото не сохранено в альбоме приложения.'); }
   updateCount(); return it;
@@ -318,34 +318,69 @@ async function select(i, toMode){ const it = photos[i]; if (!it) return false;
   catch(e){ if (seq===loadSeq){ want=-1; toast('Не удалось открыть фото.'); if (fromCam && mode==='cam') resumeCam(); } return false; }
   if (seq!==loadSeq) return false;
   want = -1; const n = photos.indexOf(it); if (n<0) return false;
-  cur = n; if (mode==='cam') view.classList.remove('mirror');
+  cur = n; if (mode==='cam') view.classList.remove('mirror'); vz=1; vpx=0; vpy=0; view.style.transition='none'; view.style.transform='';
   setMode(toMode||'view'); useImage(img); prefetch(); return true; }
 $('#file').addEventListener('change', e => { addFiles(e.target.files); e.target.value=''; });
 
-let selecting = false, selected = new Set();
+let selecting = false, selected = new Set(), albumFilter = 'all';
+const ICON_HEART = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 20.5s-7.5-4.6-7.5-10.2A4.3 4.3 0 0 1 12 7.6a4.3 4.3 0 0 1 7.5 2.7c0 5.6-7.5 10.2-7.5 10.2z"/></svg>';
+const visiblePhotos = () => albumFilter==='fav' ? photos.filter(p=>p.fav) : albumFilter==='unsaved' ? photos.filter(p=>p.saved===false) : photos;
 function renderAlbum(){
-  const g=$('#agrid'); g.innerHTML='';
-  const add=document.createElement('button'); add.type='button'; add.className='cell add'; add.innerHTML='<div><b>+</b>Из галереи</div>'; add.onclick=()=>$('#file').click(); g.appendChild(add);
-  photos.forEach((p,i) => { const b=document.createElement('button'); b.type='button'; b.className='cell'+(i===cur?' cur':''); b.setAttribute('aria-label','Фото '+(i+1));
-    if (selecting) b.setAttribute('aria-pressed', selected.has(p.id));
-    const im=document.createElement('img'); im.alt=''; im.loading='lazy'; if(!p.thumbURL && p.thumb) p.thumbURL=URL.createObjectURL(p.thumb); if (p.thumbURL) im.src=p.thumbURL; b.appendChild(im);
+  const g=$('#agrid'); g.innerHTML=''; g.classList.toggle('selecting', selecting);
+  if (albumFilter==='all' && !selecting){ const add=document.createElement('button'); add.type='button'; add.className='cell add'; add.innerHTML='<div><b>+</b>Из галереи</div>'; add.onclick=()=>$('#file').click(); g.appendChild(add); }
+  const list = visiblePhotos();
+  list.forEach(p => { const i=photos.indexOf(p); const b=document.createElement('button'); b.type='button'; b.className='cell'+(i===cur?' cur':''); b.dataset.id=p.id; b.setAttribute('aria-label','Фото '+(i+1)+(p.fav?', избранное':''));
+    const im=document.createElement('img'); im.alt=''; im.loading='lazy'; im.draggable=false; if(!p.thumbURL && p.thumb) p.thumbURL=URL.createObjectURL(p.thumb); if (p.thumbURL) im.src=p.thumbURL; b.appendChild(im);
+    if (p.fav){ const h=document.createElement('i'); h.className='fav'; h.innerHTML=ICON_HEART; b.appendChild(h); }
     if (selecting){ const t=document.createElement('i'); t.className='tick'; b.appendChild(t); }
-    b.onclick=()=>{ if (selecting){ selected.has(p.id)?selected.delete(p.id):selected.add(p.id); renderAlbum(); } else { closeAlbum(); select(i,'view'); } };
+    b.onclick=()=>{ if (selecting) return; closeAlbum(); select(i,'view'); };
     g.appendChild(b); });
-  if (!photos.length){ const e=document.createElement('p'); e.className='aempty'; e.textContent='Здесь будут ваши снимки. Снимайте камерой или добавьте фото из галереи.'; g.appendChild(e); }
-  $('#abar').hidden = !selecting; $('#albumSelect').textContent = selecting ? 'Отмена' : 'Выбрать';
-  ['#aDelete','#aApply','#aSave'].forEach(s => $(s).disabled = !selected.size);
-  $('#aDelete').textContent = selected.size ? `Удалить (${selected.size})` : 'Удалить';
+  if (!list.length){ const e=document.createElement('p'); e.className='aempty';
+    e.textContent = albumFilter==='fav' ? 'Нет избранных. Нажмите ♡ под фото, чтобы добавить.' : albumFilter==='unsaved' ? 'Все снимки уже сохранены в «Фото».' : 'Здесь будут ваши снимки. Снимайте камерой или добавьте фото из галереи.'; g.appendChild(e); }
+  document.querySelectorAll('#aseg button').forEach(b => b.setAttribute('aria-pressed', b.dataset.f===albumFilter));
+  paintSel();
 }
-function openAlbum(){ selecting=false; selected.clear(); renderAlbum(); $('#album').hidden=false; }
-function closeAlbum(){ $('#album').hidden=true; }
+function paintSel(){
+  $('#agrid').querySelectorAll('.cell[data-id]').forEach(b => { if (selecting) b.setAttribute('aria-pressed', selected.has(b.dataset.id)); else b.removeAttribute('aria-pressed'); });
+  $('#abar').hidden = !selecting; $('#atool').hidden = selecting; $('#albumCancel').hidden = !selecting; $('#aseg').hidden = selecting;
+  $('#selCount').textContent = selecting ? (selected.size ? 'Выбрано: '+selected.size : 'Выберите фото') : '';
+  ['#aDelete','#aMore','#aSave','#aFav'].forEach(s => $(s).disabled = !selected.size);
+  const allFav = selected.size && [...selected].every(id => (photos.find(p=>p.id===id)||{}).fav);
+  $('#aFav').setAttribute('aria-pressed', !!allFav);
+}
+function openAlbum(){ selecting=false; selected.clear(); renderAlbum(); $('#album').hidden=false; const c=$('#agrid .cell.cur'); c && c.scrollIntoView({block:'center'}); }
+function closeAlbum(){ $('#album').hidden=true; sdrag=null; }
 $('#openAlbum').onclick = openAlbum;
-$('#albumDone').onclick = closeAlbum;
-$('#albumSelect').onclick = () => { selecting=!selecting; selected.clear(); renderAlbum(); };
-$('#aApply').onclick = () => { const src={...P()}; delete src.fx; delete src.fy; let n=0;
+$('#albumCam').onclick = () => { closeAlbum(); openCam(); };
+$('#albumCancel').onclick = () => { selecting=false; selected.clear(); renderAlbum(); };
+$('#albumSelect').onclick = () => { selecting=!selecting; selected.clear(); renderAlbum(); if (selecting) toast('Проведите пальцем по фото — выберутся все подряд', 2200); };
+document.querySelectorAll('#aseg button').forEach(b => b.onclick = () => { albumFilter=b.dataset.f; selected.clear(); renderAlbum(); $('#agrid').scrollTop=0; });
+$('#aMore').onclick = () => sheet({title:`Выбрано: ${selected.size}`, actions:[{label:'Применить текущие настройки', run:applySel}]});
+const applySel = () => { const src={...P()}; delete src.fx; delete src.fy; let n=0;
   photos.forEach(p => { if (selected.has(p.id) && p!==item()){ p.P={...p.P, ...src}; persist(p); n++; } });
   toast(`Текущие настройки применены к ${n} фото`); selecting=false; selected.clear(); renderAlbum(); };
 $('#aSave').onclick = () => { const list = photos.filter(p=>selected.has(p.id)); selecting=false; selected.clear(); renderAlbum(); closeAlbum(); processAndOffer(list); };
+$('#aFav').onclick = () => { const list = photos.filter(p=>selected.has(p.id)); const on = !list.every(p=>p.fav);
+  list.forEach(p => { p.fav=on; persist(p); }); toast(on ? `В избранном: ${list.length}` : 'Убрано из избранного', 1400); selecting=false; selected.clear(); renderAlbum(); updateViewerInfo(); };
+
+/* drag across thumbnails to select a run of photos (like Photos on iPhone); hold near the top/bottom edge to scroll */
+let sdrag = null, sdragT = 0;
+const agEl = $('#agrid');
+agEl.addEventListener('pointerdown', e => { if (!selecting) return; const c = e.target.closest('.cell[data-id]'); if (!c) return;
+  e.preventDefault(); try { agEl.setPointerCapture(e.pointerId); } catch(_){}
+  const ids = [...agEl.querySelectorAll('.cell[data-id]')].map(b=>b.dataset.id), si = ids.indexOf(c.dataset.id);
+  sdrag = {ids, si, li:si, base:new Set(selected), on:!selected.has(c.dataset.id), x:e.clientX, y:e.clientY, pid:e.pointerId};
+  selRange(si); clearInterval(sdragT); sdragT = setInterval(selScroll, 30); });
+agEl.addEventListener('pointermove', e => { if (!sdrag || e.pointerId!==sdrag.pid) return; sdrag.x=e.clientX; sdrag.y=e.clientY; selHit(); });
+const selEnd = e => { if (!sdrag || (e && e.pointerId!==sdrag.pid)) return; sdrag=null; clearInterval(sdragT); };
+['pointerup','pointercancel','lostpointercapture'].forEach(t => agEl.addEventListener(t, selEnd));
+function selHit(){ if (!sdrag) return; const el = document.elementFromPoint(sdrag.x, sdrag.y), c = el && el.closest && el.closest('.cell[data-id]');
+  if (c){ const i = sdrag.ids.indexOf(c.dataset.id); if (i>=0 && i!==sdrag.li){ sdrag.li=i; selRange(i); } } }
+function selRange(i){ const lo=Math.min(sdrag.si,i), hi=Math.max(sdrag.si,i); selected = new Set(sdrag.base);
+  for (let k=lo;k<=hi;k++){ if (sdrag.on) selected.add(sdrag.ids[k]); else selected.delete(sdrag.ids[k]); } paintSel(); }
+function selScroll(){ if (!sdrag){ clearInterval(sdragT); return; } const r = agEl.getBoundingClientRect(), bot = r.bottom-130, top = r.top+50;
+  const v = sdrag.y>bot ? Math.min(24,(sdrag.y-bot)/3) : sdrag.y<top ? -Math.min(24,(top-sdrag.y)/3) : 0;
+  if (v){ agEl.scrollTop += v; selHit(); } }
 $('#aDelete').onclick = () => { const ids=new Set(selected); if(!ids.size) return;
   sheet({title:`Удалить ${ids.size} фото из альбома?`, text:'В «Фото» на iPhone ничего не удалится.', actions:[{label:'Удалить', red:true, run:()=>deleteIds(ids)}]}); };
 async function deleteIds(ids){
@@ -362,7 +397,8 @@ function setMode(m){
   mode = m; const b=document.body; b.classList.toggle('cam', m==='cam'); b.classList.toggle('view', m==='view'); b.classList.toggle('edit', m==='edit');
   const cam=m==='cam', view=m==='view', edit=m==='edit';
   $('#openCam').hidden = !view; $('#closeCam').hidden = !cam; $('#cancelEdit').hidden = !edit;
-  $('#openAlbum').hidden = !view; $('#camToggles').hidden = !cam;
+  $('#openAlbum').hidden = true; $('#camToggles').hidden = !cam; $('#vinfo').hidden = !view;
+  if (!view){ vz=1; vpx=0; vpy=0; $('#view').style.transform=''; }
   $('#editBtn').hidden = !view; $('#doneEdit').hidden = !edit; $('#flipCam').style.visibility = multiCam ? '' : 'hidden';
   $('#tgAdj').setAttribute('aria-pressed', adjOpen); $('#tgDate').setAttribute('aria-pressed', !!P().date); $('#tgFlash').setAttribute('aria-pressed', P().flash>.02);
   $('#tgTap').setAttribute('aria-pressed', tapShoot); $('#tgTimer').setAttribute('aria-pressed', timerSec>0); $('#timerVal').textContent = timerSec?timerSec:'';
@@ -371,9 +407,11 @@ function setMode(m){
   updateCount(); updateViewerInfo(); builtTab=null; refreshBottom(); requestRender();
 }
 function updateViewerInfo(){ if (mode!=='view') return; const it = cur>=0?photos[cur]:null;
-  if (!it){ $('#vDate').textContent='Пример'; $('#vMeta').textContent='Снимите или добавьте фото'; return; }
+  $('#vFav').setAttribute('aria-pressed', !!(it&&it.fav)); $('#vFav').disabled = !it;
+  if (!it){ $('#vDate').textContent='Пример'; $('#vMeta').textContent='Свайп вниз — альбом'; return; }
   const d=new Date(it.taken||it.date); $('#vDate').textContent = d.toLocaleDateString('ru-RU',{day:'numeric',month:'long'})+', '+d.toLocaleTimeString('ru-RU',{hour:'2-digit',minute:'2-digit'});
-  const pr = PRESETS.find(x=>x.id===it.P.preset); $('#vMeta').textContent = `${cur+1} из ${photos.length}` + (pr?' · '+pr.name:''); }
+  const pr = PRESETS.find(x=>x.id===it.P.preset); $('#vMeta').textContent = `${cur+1} из ${photos.length}` + (pr?' · '+pr.name:'') + (it.saved===false?' · не в Фото':''); }
+$('#vFav').onclick = () => { if (cur<0) return; const it=photos[cur]; it.fav=!it.fav; persist(it); updateViewerInfo(); toast(it.fav?'В избранном':'Убрано из избранного', 1000); };
 $('#editBtn').onclick = () => { editBackup = {P:JSON.parse(JSON.stringify(P())), crop:{...crop()}}; setMode('edit'); };
 $('#doneEdit').onclick = () => { persist(item()); editBackup=null; setMode('view'); };
 $('#cancelEdit').onclick = () => { if (editBackup){ item().P = editBackup.P; item().crop = editBackup.crop; persist(item()); } editBackup=null; setMode('view'); };
@@ -385,12 +423,23 @@ function stepPhoto(dir){ if (photos.length<2) return; const n = (want>=0?want:cu
 
 /* ================= rendering ================= */
 let raf = 0, lastGeom = null, liveFrame = 0;
+/* viewer zoom: the canvas is re-rendered at higher resolution and scaled with a CSS transform */
+let vz = 1, vpx = 0, vpy = 0, lastTapT = 0, zoomRT = 0;
+function clampPan(){ const w=parseFloat(view.style.width)||0, h=parseFloat(view.style.height)||0;
+  const mx=Math.max(0,(w*vz-stageEl.clientWidth)/2), my=Math.max(0,(h*vz-stageEl.clientHeight)/2); vpx=Math.max(-mx,Math.min(mx,vpx)); vpy=Math.max(-my,Math.min(my,vpy)); }
+function viewXform(anim){ if (mode!=='view'){ vz=1; vpx=vpy=0; } clampPan(); view.style.transition = anim ? 'transform .22s ease-out' : 'none';
+  view.style.transform = (vz>1.001 || vpx || vpy) ? `translate(${vpx}px,${vpy}px) scale(${vz})` : ''; }
+function zoomRender(){ clearTimeout(zoomRT); zoomRT = setTimeout(requestRender, 120); }
+function resetZoom(anim){ if (vz===1 && !vpx && !vpy) return; vz=1; vpx=vpy=0; viewXform(anim); zoomRender(); }
+function zoomAt(nz, mx, my, z0, px0, py0, anim){ nz=Math.max(1,Math.min(5,nz)); vpx = mx-(mx-px0)*(nz/z0); vpy = my-(my-py0)*(nz/z0); vz=nz; viewXform(anim); }
+const stageMid = (x,y) => { const r=stageEl.getBoundingClientRect(); return {x:x-r.left-r.width/2, y:y-r.top-r.height/2}; };
 const stageEl = $('#stage');
 function useImage(img){ E.setSource(img); if (loadedImg && loadedImg!==img && loadedImg!==sampleImg && !cachedImgs.has(loadedImg)) { loadedImg.close && loadedImg.close(); } loadedImg = img; requestRender(); }
 function requestRender(){ if (raf || mode==='cam') return; raf = requestAnimationFrame(() => { raf = 0; draw(); }); }
 function previewSize(g){
   const dpr = Math.min(mode==='cam'?2:3, window.devicePixelRatio||1), aw = stageEl.clientWidth*dpr, ah = stageEl.clientHeight*dpr;
-  const s = Math.min(aw/g.cw, ah/g.ch, (mode==='cam'?1100:2000)/Math.max(g.cw,g.ch), 1);
+  const k = mode==='view' ? vz : 1;
+  const s = Math.min(aw*k/g.cw, ah*k/g.ch, (mode==='cam'?1100:Math.min(4096,2000*k))/Math.max(g.cw,g.ch), 1);
   return {w:Math.max(2,Math.round(g.cw*s)), h:Math.max(2,Math.round(g.ch*s)), cssW:g.cw*Math.min(aw/g.cw, ah/g.ch)/dpr, cssH:g.ch*Math.min(aw/g.cw, ah/g.ch)/dpr};
 }
 function draw(){
@@ -413,15 +462,21 @@ function updateMarker(){ const m=$('#marker'); const on = P().flash>.02 && mode!
 const ptrs = new Map(); let down = null, holdT = 0, pinch = null;
 stageEl.addEventListener('pointerdown', e => { if (e.target.closest('button')) return; stageEl.setPointerCapture(e.pointerId); ptrs.set(e.pointerId,{x:e.clientX,y:e.clientY});
   if (ptrs.size===2 && mode==='cam'){ clearTimeout(holdT); const [a,b]=[...ptrs.values()]; pinch={d:Math.hypot(a.x-b.x,a.y-b.y), z:zoomLevel}; down=null; return; }
+  if (ptrs.size===2 && mode==='view'){ clearTimeout(holdT); if (down && down.held){ compare=false; $('#badge').hidden=true; requestRender(); }
+    view.style.opacity=''; const [a,b]=[...ptrs.values()]; pinch={view:true, d:Math.hypot(a.x-b.x,a.y-b.y), z:vz, px:vpx, py:vpy, m:stageMid((a.x+b.x)/2,(a.y+b.y)/2)}; down=null; return; }
   if (ptrs.size>1) return;
   askMotion();
-  down = {x:e.clientX, y:e.clientY, x0:e.clientX, y0:e.clientY, t:Date.now(), moved:false, held:false, ev0:camExpo, evDrag:false};
+  down = {x:e.clientX, y:e.clientY, x0:e.clientX, y0:e.clientY, t:Date.now(), moved:false, held:false, ev0:camExpo, evDrag:false, z: mode==='view' && vz>1.001, px0:vpx, py0:vpy};
   const cropMode = tab==='crop' && mode==='edit';
   if (!cropMode && mode!=='cam') holdT = setTimeout(() => { if (down && !down.moved){ down.held=true; compare=true; $('#badge').hidden=false; updateMarker(); requestRender(); } }, 220); });
 stageEl.addEventListener('pointermove', e => { if (!ptrs.has(e.pointerId)) return; ptrs.set(e.pointerId,{x:e.clientX,y:e.clientY});
-  if (pinch && ptrs.size>=2){ const [a,b]=[...ptrs.values()]; const d=Math.hypot(a.x-b.x,a.y-b.y); setZoom(pinch.z*d/pinch.d, false); return; }
+  if (pinch && ptrs.size>=2){ const [a,b]=[...ptrs.values()]; const d=Math.hypot(a.x-b.x,a.y-b.y);
+    if (pinch.view){ const m=stageMid((a.x+b.x)/2,(a.y+b.y)/2), nz=Math.max(1,Math.min(5,pinch.z*d/pinch.d)), k=nz/pinch.z;
+      vpx = pinch.m.x-(pinch.m.x-pinch.px)*k+(m.x-pinch.m.x); vpy = pinch.m.y-(pinch.m.y-pinch.py)*k+(m.y-pinch.m.y); vz=nz; viewXform(false); return; }
+    setZoom(pinch.z*d/pinch.d, false); return; }
   if (!down) return; const dx=e.clientX-down.x, dy=e.clientY-down.y;
   if (Math.hypot(e.clientX-down.x0, e.clientY-down.y0)>8) { down.moved = true; clearTimeout(holdT); }
+  if (down.z){ if (down.moved && !down.held){ vpx = down.px0+(e.clientX-down.x0); vpy = down.py0+(e.clientY-down.y0); viewXform(false); } return; }
   if (mode==='view' && down.moved && !down.held && (down.vDrag || (e.clientY-down.y0>12 && e.clientY-down.y0>Math.abs(e.clientX-down.x0)*1.3))){
     down.vDrag = true; const d=Math.max(0,e.clientY-down.y0); view.style.transition='none'; view.style.transform=`translateY(${d}px) scale(${1-Math.min(.25,d/1600)})`; view.style.opacity=String(1-Math.min(.5,d/700)); return; }
   if (mode==='cam' && !tapShoot && down.moved && (down.evDrag || Math.abs(e.clientY-down.y0)>Math.abs(e.clientX-down.x0)*1.3)){
@@ -430,17 +485,19 @@ stageEl.addEventListener('pointermove', e => { if (!ptrs.has(e.pointerId)) retur
     const fx=dx*lastGeom.cw/r.width, fy=dy*lastGeom.ch/r.height, co=Math.cos(lastGeom.th), si=Math.sin(lastGeom.th);
     c.ox -= (co*fx-si*fy)/lastGeom.Sw; c.oy -= (si*fx+co*fy)/lastGeom.Sh; down.x=e.clientX; down.y=e.clientY; persist(item()); requestRender(); } });
 function endPointer(e){ ptrs.delete(e.pointerId);
-  if (pinch){ if (ptrs.size<2){ pinch=null; setZoom(zoomLevel, true); } return; }
+  if (pinch){ if (ptrs.size<2){ const pv=pinch.view; pinch=null; if (pv){ if (vz<1.08) resetZoom(true); else zoomRender(); } else setZoom(zoomLevel, true); } return; }
   clearTimeout(holdT); if (!down) return; const d=down; down=null;
   if (d.held){ compare=false; $('#badge').hidden=true; updateMarker(); requestRender(); return; }
   if (d.vDrag){ const dy=e.clientY-d.y0, fast=dy>40 && Date.now()-d.t<350;
     view.style.transition='transform .2s, opacity .2s'; view.style.transform=''; view.style.opacity='';
     if (e.type==='pointerup' && (dy>110 || fast)) openAlbum(); return; }
   if (e.type!=='pointerup' || d.evDrag) return;
+  if (d.z){ if (!d.moved){ const now=Date.now(); if (now-lastTapT<320){ lastTapT=0; resetZoom(true); } else lastTapT=now; } return; }
   const dx=e.clientX-d.x0, dy=e.clientY-d.y0, cropMode = tab==='crop' && mode==='edit';
   if (!cropMode && Math.abs(dx)>50 && Math.abs(dx)>Math.abs(dy)*1.5 && Date.now()-d.t<700){ if (mode==='view') stepPhoto(dx<0?1:-1); else stepFilter(dx<0?1:-1); return; }
   if (d.moved || cropMode) return;
-  if (mode==='view'){ const sr=stageEl.getBoundingClientRect(), fx=(e.clientX-sr.left)/sr.width; if (fx<.25) stepPhoto(-1); else if (fx>.75) stepPhoto(1); return; }
+  if (mode==='view'){ const sr=stageEl.getBoundingClientRect(), fx=(e.clientX-sr.left)/sr.width; if (fx<.25) stepPhoto(-1); else if (fx>.75) stepPhoto(1);
+    else { const now=Date.now(); if (now-lastTapT<320 && cur>=0){ lastTapT=0; const m=stageMid(e.clientX,e.clientY); zoomAt(2.5, m.x, m.y, 1, 0, 0, true); zoomRender(); } else lastTapT=now; } return; }
   if (mode==='cam' && tapShoot){ shoot(); return; }
   if (mode==='cam'){ const sr=stageEl.getBoundingClientRect(); expoAt={x:e.clientX,y:e.clientY}; setExpo(0, expoAt); }
   if (mode!=='view' && P().flash>.02){ const r=view.getBoundingClientRect(); let x=(e.clientX-r.left)/r.width; if(view.classList.contains('mirror')) x=1-x;
@@ -628,19 +685,19 @@ $('#sheet').addEventListener('click', e => { if (e.target.id==='sheet' && !$('#s
 async function processAndOffer(list){
   if (!list.length) return;
   sheet({title:'Обрабатываю в полном размере…', progress:true});
-  const out=[]; const keepImg = mode==='cam' ? null : loadedImg; const wasCam = mode==='cam' && !camPaused; if (wasCam) camPaused = true;
+  const out=[], done=[]; const keepImg = mode==='cam' ? null : loadedImg; const wasCam = mode==='cam' && !camPaused; if (wasCam) camPaused = true;
   for (let i=0;i<list.length;i++){ const it=list[i];
     const msg=$('#sheetMain .msg'); if (msg) msg.innerHTML = `<b>Обрабатываю в полном размере…</b>${i+1} из ${list.length}`; const pg=$('#prog'); if(pg) pg.style.width=(i/list.length*100)+'%';
     await frame(); await tick();
     try { const img = it===sample ? sampleImg : await decodeItem(it); E.setSource(img);   // always the full-size original
-      const r = exportWith(it); out.push({name:outName(it), bytes:r.bytes, W:r.W, H:r.H}); if (img!==loadedImg && img!==sampleImg) img.close && img.close(); }
+      const r = exportWith(it); out.push({name:outName(it), bytes:r.bytes, W:r.W, H:r.H}); done.push(it); if (img!==loadedImg && img!==sampleImg) img.close && img.close(); }
     catch(e){ toast('Не удалось обработать '+it.name); } }
   if (keepImg){ E.setSource(keepImg); requestRender(); }
   if (wasCam){ camPaused = false; if (!camRaf) camLoop(); }
   if (!out.length){ closeSheet(); return; }
   const mb = out.reduce((s,f)=>s+f.bytes.length,0)/1048576, one = out.length===1 ? `${out[0].W}×${out[0].H}, ` : '';
   sheet({title: out.length===1 ? 'Фото готово' : `Готово: ${out.length} фото`, text: `${one}${fmt1(mb)} МБ, JPEG 95%. Затем в меню нажмите «Сохранить изображение».`,
-    actions:[{label: out.length===1 ? 'Сохранить в Фото' : `Сохранить ${out.length} фото`, bold:true, run:()=>shareFiles(out)},
+    actions:[{label: out.length===1 ? 'Сохранить в Фото' : `Сохранить ${out.length} фото`, bold:true, run:async()=>{ if (await shareFiles(out)){ done.forEach(p => { if (p.saved!==true && p.id){ p.saved=true; persist(p); } }); updateViewerInfo(); if (!$('#album').hidden) renderAlbum(); } }},
              {label:'Запомнить настройки как пресет', run:savePresetFromCurrent}]});
 }
 function savePresetFromCurrent(){ const list=loadMine(); const p={...P()}; delete p.fx; delete p.fy; delete p.preset; delete p.date;

@@ -112,7 +112,7 @@ body.cam .tabs{display:none}
 /* album */
 .album{position:fixed;inset:0;z-index:10;background:#000;display:flex;flex-direction:column;padding-top:env(safe-area-inset-top,0px)}
 .album .top{flex:0 0 auto}
-.agrid{flex:1;overflow-y:auto;display:grid;grid-template-columns:repeat(auto-fill,minmax(96px,1fr));gap:2px;align-content:start;padding:2px 2px calc(env(safe-area-inset-bottom,0px) + 80px);-webkit-overflow-scrolling:touch}
+.agrid{flex:1;overflow-y:auto;display:grid;grid-template-columns:repeat(auto-fill,minmax(96px,1fr));gap:2px;align-content:start;padding:2px 2px calc(env(safe-area-inset-bottom,0px) + 150px);-webkit-overflow-scrolling:touch}
 .cell{position:relative;display:block;width:100%;height:0;padding:0 0 100%;background:#1c1c1e;overflow:hidden}
 .cell img{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;display:block}
 .cell.add>div{position:absolute;inset:0;display:grid;place-content:center;text-align:center}
@@ -122,7 +122,7 @@ body.cam .tabs{display:none}
 .cell[aria-pressed="true"] .tick{background:var(--tint);border-color:#fff}
 .cell[aria-pressed="true"] .tick::after{content:"";position:absolute;left:6px;top:3px;width:6px;height:10px;border:solid #fff;border-width:0 2px 2px 0;transform:rotate(45deg)}
 .cell.cur::after{content:"";position:absolute;inset:0;box-shadow:inset 0 0 0 3px var(--yellow)}
-.abar{position:absolute;left:0;right:0;bottom:0;display:flex;justify-content:space-between;align-items:center;padding:10px 18px calc(env(safe-area-inset-bottom,0px) + 10px);background:rgba(18,18,18,.92);-webkit-backdrop-filter:blur(20px);backdrop-filter:blur(20px);font-size:16px}
+.abar{display:flex;justify-content:space-between;align-items:center;padding:10px 18px calc(env(safe-area-inset-bottom,0px) + 10px);background:rgba(18,18,18,.92);-webkit-backdrop-filter:blur(20px);backdrop-filter:blur(20px);font-size:16px}
 .abar .red{color:var(--red)} .abar .blue{color:var(--tint)}
 .abar button:disabled{opacity:.35}
 .aempty{grid-column:1/-1;color:var(--sec);padding:20px 16px;font-size:14px;text-align:center}
@@ -142,7 +142,10 @@ body.cam .tabs{display:none}
 
 /* v4: modes, viewer bar, zoom, timer */
 .vbar{display:none}
-body.view .vbar{display:grid;grid-template-columns:44px 1fr 44px 44px;align-items:center;padding:6px 14px 4px}
+body.view .vbar{display:grid;grid-template-columns:44px 44px 1fr 44px 44px;align-items:center;padding:6px 14px 4px}
+.vbar #editBtn{justify-self:center;font-size:17px}
+#vFav[aria-pressed="true"] svg{fill:var(--red);stroke:var(--red)}
+.top .vinfo b{font-size:15px}
 .vinfo{text-align:center;display:grid;gap:2px}
 .vinfo b{font-size:14px;font-weight:600}
 .vinfo span{font-size:12px;color:var(--sec)}
@@ -162,18 +165,36 @@ body.edit .tabs{display:grid}
 .expo:not(.set) .sun b{display:none}
 
 
+/* v11 album */
+.abot{position:absolute;left:0;right:0;bottom:0;background:rgba(18,18,18,.92);-webkit-backdrop-filter:blur(20px);backdrop-filter:blur(20px);border-top:.5px solid var(--sep);padding-bottom:env(safe-area-inset-bottom,0px)}
+.abot .abar{background:none;-webkit-backdrop-filter:none;backdrop-filter:none;padding:10px 18px 2px;border:0}
+.atool{display:grid;grid-template-columns:1fr auto 1fr;align-items:center;padding:4px 18px 8px;min-height:52px}
+.atool{grid-template-columns:1fr 1fr}
+.atool #albumCam{justify-self:start} .atool #albumSelect{justify-self:end}
+.abot .abar{display:grid;grid-template-columns:44px 44px 1fr 44px 44px;align-items:center;gap:14px;padding:6px 18px 8px;min-height:56px}
+.abot .abar[hidden]{display:none}
+.abar .ico{width:44px;height:44px;display:grid;place-items:center;color:var(--tint)} .abar .ico svg{width:24px;height:24px}
+.abar .ico.red{color:var(--red)} .abar #selCount{text-align:center;font-size:15px;font-weight:600}
+#aFav[aria-pressed="true"] svg{fill:var(--red);stroke:var(--red)}
+.seg{display:inline-flex;background:var(--fill);border-radius:9px;padding:2px;gap:2px}
+.seg button{height:30px;padding:0 12px;border-radius:7px;font-size:13px;font-weight:600;color:var(--sec)}
+.seg button[aria-pressed="true"]{background:#636366;color:#fff}
+.agrid.selecting{touch-action:none}
+.cell .fav{position:absolute;left:5px;bottom:5px;width:18px;height:18px;filter:drop-shadow(0 0 2px rgba(0,0,0,.6))}
+.cell .fav svg{width:100%;height:100%;fill:#fff}
 </style>
 </head>
 <body>
 <div class="app" id="app">
   <header class="top" id="top">
     <div class="l">
-      <button class="tbtn" id="openCam" type="button"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round" aria-hidden="true"><path d="M3 8.5A1.5 1.5 0 0 1 4.5 7h2.6l1.6-2.2h6.6L16.9 7h2.6A1.5 1.5 0 0 1 21 8.5v9A1.5 1.5 0 0 1 19.5 19h-15A1.5 1.5 0 0 1 3 17.5z"/><circle cx="12" cy="12.8" r="3.6"/></svg>Камера</button>
+      <button class="tbtn" id="openCam" type="button" aria-label="Камера"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round" aria-hidden="true"><path d="M3 8.5A1.5 1.5 0 0 1 4.5 7h2.6l1.6-2.2h6.6L16.9 7h2.6A1.5 1.5 0 0 1 21 8.5v9A1.5 1.5 0 0 1 19.5 19h-15A1.5 1.5 0 0 1 3 17.5z"/><circle cx="12" cy="12.8" r="3.6"/></svg></button>
       <button class="tbtn" id="cancelEdit" type="button" hidden>Отменить</button>
       <button class="ico" id="closeCam" type="button" aria-label="Закрыть камеру" hidden><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M6 6l12 12M18 6 6 18"/></svg></button>
     </div>
     <div class="c">
       <button class="pill" id="openAlbum" type="button"><svg viewBox="0 0 16 16" fill="currentColor" aria-hidden="true"><rect x="1" y="1" width="6" height="6" rx="1.2"/><rect x="9" y="1" width="6" height="6" rx="1.2"/><rect x="1" y="9" width="6" height="6" rx="1.2"/><rect x="9" y="9" width="6" height="6" rx="1.2"/></svg><span id="albumCount">Альбом</span></button>
+      <div class="vinfo" id="vinfo" hidden><b id="vDate"></b><span id="vMeta"></span></div>
       <div id="camToggles" hidden style="display:flex;gap:6px">
         <button class="ico" id="tgDate" type="button" aria-label="Дата в углу" aria-pressed="false"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><rect x="3.5" y="5" width="17" height="15" rx="2.5"/><path d="M3.5 10h17M8 3v4M16 3v4"/></svg></button>
         <button class="ico" id="tgFlash" type="button" aria-label="Вспышка" aria-pressed="false"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round" aria-hidden="true"><path d="M13 2 5 13h6l-1 9 8-11h-6z"/></svg></button>
@@ -183,7 +204,6 @@ body.edit .tabs{display:grid}
       </div>
     </div>
     <div class="r">
-      <button class="tbtn y" id="editBtn" type="button">Править</button>
       <button class="tbtn y" id="doneEdit" type="button" hidden>Готово</button>
     </div>
   </header>
@@ -221,7 +241,8 @@ body.edit .tabs{display:grid}
     </div>
     <div class="vbar" id="vbar">
       <button class="ico" id="vShare" type="button" aria-label="Сохранить в Фото"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3v12M7.5 7.5 12 3l4.5 4.5"/><path d="M6 11H5a1.5 1.5 0 0 0-1.5 1.5v7A1.5 1.5 0 0 0 5 21h14a1.5 1.5 0 0 0 1.5-1.5v-7A1.5 1.5 0 0 0 19 11h-1"/></svg></button>
-      <div class="vinfo"><b id="vDate"></b><span id="vMeta"></span></div>
+      <button class="ico" id="vFav" type="button" aria-label="Избранное" aria-pressed="false"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round" aria-hidden="true"><path d="M12 20.5s-7.5-4.6-7.5-10.2A4.3 4.3 0 0 1 12 7.6a4.3 4.3 0 0 1 7.5 2.7c0 5.6-7.5 10.2-7.5 10.2z"/></svg></button>
+      <button class="tbtn y" id="editBtn" type="button">Править</button>
       <button class="ico" id="vRot" type="button" aria-label="Повернуть фото"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 9h9a4 4 0 0 1 4 4v6"/><path d="M8 6 5 9l3 3"/><rect x="5" y="13" width="9" height="7" rx="1.5"/></svg></button>
       <button class="ico" id="vDel" type="button" aria-label="Удалить фото"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 6.5h16M9.5 6.5V4.5h5v2M6.5 6.5l1 13a1.5 1.5 0 0 0 1.5 1.4h6a1.5 1.5 0 0 0 1.5-1.4l1-13M10 10.5v6.5M14 10.5v6.5"/></svg></button>
     </div>
@@ -236,24 +257,32 @@ body.edit .tabs{display:grid}
 
 <div class="album" id="album" hidden>
   <header class="top">
-    <div class="l"><button class="tbtn y" id="albumDone" type="button">Готово</button></div>
-    <div class="c" style="font-weight:600;font-size:17px">Альбом</div>
-    <div class="r"><button class="tbtn" id="albumSelect" type="button">Выбрать</button></div>
+    <div class="l"></div>
+    <div class="c"><div class="seg" id="aseg" role="group"><button type="button" data-f="all">Все</button><button type="button" data-f="fav">Избранное</button><button type="button" data-f="unsaved">Не в Фото</button></div></div>
+    <div class="r"><button class="tbtn y" id="albumCancel" type="button" hidden>Отмена</button></div>
   </header>
   <div class="agrid" id="agrid"></div>
-  <div class="abar" id="abar" hidden>
-    <button type="button" class="blue" id="aSave">Сохранить</button>
-    <button type="button" class="blue" id="aApply">Применить настройки</button>
-    <button type="button" class="red" id="aDelete">Удалить</button>
+  <div class="abot">
+    <div class="abar" id="abar" hidden>
+      <button type="button" class="ico" id="aSave" aria-label="Сохранить в Фото"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3v12M7.5 7.5 12 3l4.5 4.5"/><path d="M6 11H5a1.5 1.5 0 0 0-1.5 1.5v7A1.5 1.5 0 0 0 5 21h14a1.5 1.5 0 0 0 1.5-1.5v-7A1.5 1.5 0 0 0 19 11h-1"/></svg></button>
+      <button type="button" class="ico" id="aFav" aria-label="Избранное"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 20.5s-7.5-4.6-7.5-10.2A4.3 4.3 0 0 1 12 7.6a4.3 4.3 0 0 1 7.5 2.7c0 5.6-7.5 10.2-7.5 10.2z"/></svg></button>
+      <span id="selCount"></span>
+      <button type="button" class="ico" id="aMore" aria-label="Ещё"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="9"/><circle cx="8" cy="12" r=".6" fill="currentColor"/><circle cx="12" cy="12" r=".6" fill="currentColor"/><circle cx="16" cy="12" r=".6" fill="currentColor"/></svg></button>
+      <button type="button" class="ico red" id="aDelete" aria-label="Удалить"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 6.5h16M9.5 6.5V4.5h5v2M6.5 6.5l1 13a1.5 1.5 0 0 0 1.5 1.4h6a1.5 1.5 0 0 0 1.5-1.4l1-13M10 10.5v6.5M14 10.5v6.5"/></svg></button>
+    </div>
+    <div class="atool" id="atool">
+      <button class="tbtn" id="albumCam" type="button"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round" aria-hidden="true"><path d="M3 8.5A1.5 1.5 0 0 1 4.5 7h2.6l1.6-2.2h6.6L16.9 7h2.6A1.5 1.5 0 0 1 21 8.5v9A1.5 1.5 0 0 1 19.5 19h-15A1.5 1.5 0 0 1 3 17.5z"/><circle cx="12" cy="12.8" r="3.6"/></svg>Камера</button>
+      <button class="tbtn y" id="albumSelect" type="button">Выбрать</button>
+    </div>
   </div>
 </div>
 <div class="flashfx" id="flashfx"></div>
 <div class="sheet" id="sheet" hidden><div class="box"><div class="grp" id="sheetMain"></div><div class="grp"><button type="button" class="act bold" id="sheetCancel">Отмена</button></div></div></div>
 
-<script src="util.js?v=10"></script>
-<script src="gl.js?v=10"></script>
-<script src="presets.js?v=10"></script>
-<script src="sample.js?v=10"></script>
-<script src="app.js?v=10"></script>
+<script src="util.js?v=11"></script>
+<script src="gl.js?v=11"></script>
+<script src="presets.js?v=11"></script>
+<script src="sample.js?v=11"></script>
+<script src="app.js?v=11"></script>
 </body>
 </html>
