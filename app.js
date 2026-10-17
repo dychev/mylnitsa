@@ -210,8 +210,12 @@ function buildCropItems(){
 }
 
 /* ================= state changes ================= */
-const rec = p => ({id:p.id, name:p.name, date:p.date, taken:p.taken, bs:true, exif:p.exif, crop:p.crop, P:p.P, thumb:p.thumb, fav:!!p.fav, saved:p.saved});
-function persist(p){ if (!p || !p.id) return; clearTimeout(p._t); p._t = setTimeout(() => DB.put(rec(p)).catch(()=>{}), 400); }
+const rec = p => ({id:p.id, name:p.name, date:p.date, taken:p.taken, bs:true, exif:p.exif, crop:p.crop, P:p.P, thumbBuf:p.thumbBuf||null, fav:!!p.fav, saved:p.saved});
+/* v12: thumbnails are stored as plain bytes, not as a Blob. Safari drops a Blob that was read from the database once its
+   record is rewritten — the thumbnail turned into "?" and every later save of that photo failed, so edits were lost. */
+async function setThumb(p, blob){ if (!blob){ p.thumb=null; p.thumbBuf=null; return; } p.thumbBuf = await blob.arrayBuffer(); p.thumb = new Blob([p.thumbBuf], {type:'image/jpeg'}); }
+let persistWarned = false;
+function persist(p){ if (!p || !p.id) return; clearTimeout(p._t); p._t = setTimeout(() => DB.put(rec(p)).catch(e => { console.warn('persist', e); if (!persistWarned){ persistWarned=true; toast('Не удалось сохранить изменения фото. Попробуйте ещё раз.', 3000); } }), 400); }
 function changed(fromDial, keepPreset){
   if (!keepPreset) P().preset = null;
   persist(item()); requestRender();
@@ -280,7 +284,8 @@ const stamp = d => { const p=n=>String(n).padStart(2,'0'); return `${d.getFullYe
 function updateCount(){ $('#albumCount').textContent = photos.length ? 'Альбом · '+photos.length : 'Альбом'; $('#sampleTag').hidden = true; }
 async function addItem({blob, name, exif, P:ip, crop:ic, img, taken}){
   const date = Date.now();
-  const it = {id:'p'+date+Math.random().toString(36).slice(2,7), name, date, taken: taken||null, blob, exif, crop: ic||newCrop(), P: ip||{...P()}, thumb: img?await makeThumb(img, (ic&&ic.rot)||0):null, fav:false, saved:false};
+  const it = {id:'p'+date+Math.random().toString(36).slice(2,7), name, date, taken: taken||null, blob, exif, crop: ic||newCrop(), P: ip||{...P()}, thumb:null, fav:false, saved:false};
+  if (img) await setThumb(it, await makeThumb(img, (ic&&ic.rot)||0));
   photos.unshift(it); if (cur>=0) cur++;
   try { await DB.add(rec(it), blob); } catch(e){ toast('Не хватает места: фото не сохранено в альбоме приложения.'); }
   updateCount(); return it;
@@ -418,7 +423,7 @@ $('#cancelEdit').onclick = () => { if (editBackup){ item().P = editBackup.P; ite
 $('#vDel').onclick = () => { if (cur<0) return; const id=photos[cur].id; sheet({title:'Удалить это фото?', text:'Из альбома приложения. В «Фото» на iPhone ничего не удалится.', actions:[{label:'Удалить фото', red:true, run:()=>deleteIds(new Set([id]))}]}); };
 $('#vShare').onclick = () => processAndOffer([item()]);
 $('#vRot').onclick = async () => { if (cur<0) return; const it=photos[cur]; it.crop.rot=(it.crop.rot+3)%4; it.crop.ox=0; it.crop.oy=0; persist(it); requestRender();
-  if (loadedImg){ it.thumb = await makeThumb(loadedImg, it.crop.rot); if (it.thumbURL) URL.revokeObjectURL(it.thumbURL); it.thumbURL=null; persist(it); } };
+  if (loadedImg){ await setThumb(it, await makeThumb(loadedImg, it.crop.rot)); if (it.thumbURL) URL.revokeObjectURL(it.thumbURL); it.thumbURL=null; persist(it); } };
 function stepPhoto(dir){ if (photos.length<2) return; const n = (want>=0?want:cur)+dir; if (n<0||n>=photos.length){ toast(dir>0?'Это последнее фото':'Это первое фото',1000); return; } select(n,'view'); }
 
 /* ================= rendering ================= */
@@ -714,6 +719,13 @@ view.addEventListener('webglcontextrestored', () => { clearTimeout(ctxT);
 (async () => {
   sampleImg = makeSample();
   try { const recs = await DB.all(); photos = recs.sort((a,b)=>b.date-a.date).map(r=>({...r})); } catch(_) { photos = []; }
+  // v12: thumbnails from bytes; old Blob thumbnails are converted once, unreadable ones are rebuilt from the original
+  const needThumb = [];
+  for (const p of photos){
+    if (p.thumbBuf){ p.thumb = new Blob([p.thumbBuf], {type:'image/jpeg'}); continue; }
+    const old = p.thumb; p.thumb = null;
+    if (old){ try { await setThumb(p, old); if (p.bs) await DB.put(rec(p)); continue; } catch(_){} }
+    needThumb.push(p); }
   // v9 migration: move originals out of the meta records (once)
   for (const p of photos) if (!p.bs){ try { if (p.blob){ const m = rec(p); await DB.add(m, p.blob); } p.bs = true; } catch(_){} p.blob = null; }
   if (photos.length){ cur=0; if (!(await select(0,'view'))){ setMode('view'); useImage(sampleImg); } }
@@ -725,6 +737,10 @@ view.addEventListener('webglcontextrestored', () => { clearTimeout(ctxT);
     navigator.serviceWorker.register('sw.js').then(r => r.update()).catch(()=>{});
   }
   openCam();   // ph-y starts in the camera
+  (async () => { for (const p of needThumb){ if (!photos.includes(p)) continue;
+    try { const img = await decodeItem(p, 1024); await setThumb(p, await makeThumb(img, p.crop.rot||0)); img.close && img.close(); p.thumbURL=null; await DB.put(rec(p)); } catch(_){}
+    await tick(); }
+    if (needThumb.length && !$('#album').hidden) renderAlbum(); })();
 })();
 window.__myl = {E, get photos(){return photos;}, exportWith, get mode(){return mode;}, get P(){return P();}, render:()=>requestRender(), setZoom, select, get cur(){return cur;}, get hwZoom(){return hwZoom;}, get zoomChips(){return zoomChips;}, get digitalZoom(){return digitalZoom;}, imgCache};
 })();
