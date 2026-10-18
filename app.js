@@ -6,6 +6,17 @@ const frame = () => new Promise(r => requestAnimationFrame(() => r()));
 const fmt1 = v => v.toFixed(1).replace('.', ',');
 const esc = s => String(s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 let toastT = 0;
+function pop(el){ if (!el) return; el.classList.remove('pop'); void el.offsetWidth; el.classList.add('pop'); }
+/* snackbar: one line at the bottom with an optional action and progress (replaces blocking sheets and info toasts) */
+let snackT = 0, snackRun = null;
+function placeSnack(){ const el=$('#snack'); let b;
+  if (!$('#album').hidden){ const ab=document.querySelector('.abot'); b = (ab?ab.offsetHeight:60)+10; }
+  else { const r=$('#stage').getBoundingClientRect(); b = Math.max(12, innerHeight - r.bottom + 12); }
+  el.style.bottom = b+'px'; }
+function snack(o){ const el=$('#snack'); if (!o){ el.hidden=true; snackRun=null; return; }
+  $('#snText').textContent = o.text; const btn=$('#snBtn'); btn.hidden = !o.action; btn.textContent = o.action||''; snackRun = o.run||null;
+  const bar=$('#snBar'); bar.hidden = o.progress==null; if (o.progress!=null) bar.firstElementChild.style.width = (o.progress*100)+'%';
+  placeSnack(); el.hidden=false; clearTimeout(snackT); if (o.ms) snackT=setTimeout(()=>{ el.hidden=true; snackRun=null; }, o.ms); }
 function toast(t, ms){ const el=$('#toast'); if(!t){ el.hidden=true; return; } el.textContent=t; el.hidden=false; clearTimeout(toastT); toastT=setTimeout(()=>el.hidden=true, ms||2600); }
 
 /* ================= storage ================= */
@@ -117,9 +128,9 @@ function drawDial(){
   const zeroI = dialT.zero!=null ? Math.round((dialT.zero-dialT.min)/(dialT.max-dialT.min)*N) : -1;
   for (let i=0;i<=N;i++){ const x = cx + i*sp - off; if (x<-sp||x>W+sp) continue;
     const major = i%5===0, z = i===zeroI, edge = Math.min(1, Math.min(x, W-x)/(W*.25));
-    dctx.globalAlpha = (major?.75:.4)*Math.max(0,edge); dctx.fillStyle = z ? '#ffd60a' : '#fff';
+    dctx.globalAlpha = (major?.75:.4)*Math.max(0,edge); dctx.fillStyle = z ? '#e0ff00' : '#fff';
     const h = z ? H*.55 : major ? H*.38 : H*.24; dctx.fillRect(Math.round(x-dpr*.5), (H-h)/2, Math.max(1,dpr*(z?1.6:1)), h); }
-  dctx.globalAlpha = 1; dctx.fillStyle = '#ffd60a'; dctx.fillRect(Math.round(cx-dpr), H*.12, 2*dpr, H*.76);
+  dctx.globalAlpha = 1; dctx.fillStyle = '#e0ff00'; dctx.fillRect(Math.round(cx-dpr), H*.12, 2*dpr, H*.76);
   $('#rLabel').textContent = dialT.label; $('#rVal').textContent = dialT.fmt(dialT.get());
 }
 (() => { let st=null, lastTap=0;
@@ -151,10 +162,11 @@ function paintAdjItems(){ itemsEl.querySelectorAll('.it[data-k]').forEach(b => {
   const ring=b.firstElementChild; ring.style.setProperty('--v', Math.min(1,r.v).toFixed(3)); ring.classList.toggle('neg', r.neg); b.setAttribute('aria-pressed', p.k===selParam); }); }
 function filterChips(container, onPick){
   container.innerHTML='';
-  const mk = (id, name, fn, icon) => { const b=document.createElement('button'); b.type='button'; b.className='chip'; b.dataset.id=id; b.id='f-'+id; b.innerHTML=(icon||'')+esc(name); b.onclick=()=>{ fn(); onPick&&onPick(); }; container.appendChild(b); };
+  const mk = (id, name, fn, icon) => { const b=document.createElement('button'); b.type='button'; b.className='chip fchip'; b.dataset.id=id; b.id='f-'+id; b.innerHTML=(icon||'')+esc(name); b.onclick=()=>{ fn(); onPick&&onPick(); }; container.appendChild(b); };
   PRESETS.forEach(pr => mk(pr.id, pr.name, () => applyPreset(pr.p, pr.id, pr.name)));
   loadMine().forEach((m,i) => mk('mine'+i, m.name, () => applyPreset(m.p, 'mine'+i, m.name)));
   mk('random', 'Случайный', randomPreset, ICON.dice);
+  if (container===itemsEl && mode==='edit') mk('savemine', '+ Мой', savePresetFromCurrent);
 }
 function paintChips(container){ container.querySelectorAll('.chip').forEach(b => b.setAttribute('aria-pressed', b.dataset.id===P().preset)); }
 function setOpts(p){ optsEl.innerHTML=''; p.opts.forEach(([v,t]) => { const b=document.createElement('button'); b.type='button'; b.textContent=t; b.setAttribute('aria-pressed', P()[p.k]===v);
@@ -233,7 +245,7 @@ function randomPreset(){
     iso:rr(.08,.65), gtype:pick([0,0,1,2]), gsize:rr(.1,.7), chroma:bw?0:rr(.05,.5), res:pick([640,1600,2048,2048,2560,3648]), bw:bw?1:0, ir:ir?1:0};
   applyPreset(p, 'random', 'Случайный');
 }
-function showName(n){ const el=$('#fname'); el.textContent=n; el.classList.add('on'); clearTimeout(showName.t); showName.t=setTimeout(()=>el.classList.remove('on'), 650); }
+function showName(n){ const el=$('#fname'); el.textContent=n; el.classList.add('on'); clearTimeout(showName.t); showName.t=setTimeout(()=>el.classList.remove('on'), 900); }
 
 /* tabs */
 ['flt','adj','crop'].forEach(t => $('#t-'+t).onclick = () => { tab=t; ['flt','adj','crop'].forEach(o => $('#t-'+o).setAttribute('aria-selected', o===t)); refreshBottom(); });
@@ -329,14 +341,22 @@ $('#file').addEventListener('change', e => { addFiles(e.target.files); e.target.
 
 let selecting = false, selected = new Set(), albumFilter = 'all';
 const ICON_HEART = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 20.5s-7.5-4.6-7.5-10.2A4.3 4.3 0 0 1 12 7.6a4.3 4.3 0 0 1 7.5 2.7c0 5.6-7.5 10.2-7.5 10.2z"/></svg>';
+const dayKey = t => { const d=new Date(t); return d.getFullYear()+'-'+d.getMonth()+'-'+d.getDate(); };
+function dayLabel(t){ const d=new Date(t), now=new Date(), y=new Date(now); y.setDate(now.getDate()-1);
+  if (dayKey(t)===dayKey(now)) return 'Сегодня'; if (dayKey(t)===dayKey(y)) return 'Вчера';
+  return d.toLocaleDateString('ru-RU', d.getFullYear()===now.getFullYear() ? {day:'numeric', month:'long', weekday:'short'} : {day:'numeric', month:'long', year:'numeric'}); }
 const visiblePhotos = () => albumFilter==='fav' ? photos.filter(p=>p.fav) : albumFilter==='unsaved' ? photos.filter(p=>p.saved===false) : photos;
 function renderAlbum(){
   const g=$('#agrid'); g.innerHTML=''; g.classList.toggle('selecting', selecting);
-  if (albumFilter==='all' && !selecting){ const add=document.createElement('button'); add.type='button'; add.className='cell add'; add.innerHTML='<div><b>+</b>Из галереи</div>'; add.onclick=()=>$('#file').click(); g.appendChild(add); }
-  const list = visiblePhotos();
-  list.forEach(p => { const i=photos.indexOf(p); const b=document.createElement('button'); b.type='button'; b.className='cell'+(i===cur?' cur':''); b.dataset.id=p.id; b.setAttribute('aria-label','Фото '+(i+1)+(p.fav?', избранное':''));
+  const list = visiblePhotos(); let lastDay = null;
+  const addCell = () => { const add=document.createElement('button'); add.type='button'; add.className='cell add'; add.innerHTML='<div><b>+</b>Из галереи</div>'; add.onclick=()=>$('#file').click(); g.appendChild(add); };
+  if (!list.length && albumFilter==='all' && !selecting) addCell();
+  list.forEach(p => { const i=photos.indexOf(p);
+    const dk = dayKey(p.date); if (dk!==lastDay){ const hd=document.createElement('div'); hd.className='aday'; hd.textContent=dayLabel(p.date); g.appendChild(hd);
+      if (lastDay===null && albumFilter==='all' && !selecting) addCell(); lastDay=dk; } const b=document.createElement('button'); b.type='button'; b.className='cell'+(i===cur?' cur':''); b.dataset.id=p.id; b.setAttribute('aria-label','Фото '+(i+1)+(p.fav?', избранное':''));
     const im=document.createElement('img'); im.alt=''; im.loading='lazy'; im.draggable=false; if(!p.thumbURL && p.thumb) p.thumbURL=URL.createObjectURL(p.thumb); if (p.thumbURL) im.src=p.thumbURL; b.appendChild(im);
     if (p.fav){ const h=document.createElement('i'); h.className='fav'; h.innerHTML=ICON_HEART; b.appendChild(h); }
+    if (p.saved===false && !selecting){ const u=document.createElement('i'); u.className='uns'; u.title='Не в Фото'; b.appendChild(u); }
     if (selecting){ const t=document.createElement('i'); t.className='tick'; b.appendChild(t); }
     b.onclick=()=>{ if (selecting) return; closeAlbum(); select(i,'view'); };
     g.appendChild(b); });
@@ -347,26 +367,26 @@ function renderAlbum(){
 }
 function paintSel(){
   $('#agrid').querySelectorAll('.cell[data-id]').forEach(b => { if (selecting) b.setAttribute('aria-pressed', selected.has(b.dataset.id)); else b.removeAttribute('aria-pressed'); });
-  $('#abar').hidden = !selecting; $('#atool').hidden = selecting; $('#albumCancel').hidden = !selecting; $('#aseg').hidden = selecting;
+  $('#abar').hidden = !selecting; $('#albumCam').hidden = selecting; $('#selCount').hidden = !selecting; $('#aseg').hidden = selecting;
+  $('#albumSelect').textContent = selecting ? 'Отмена' : 'Выбрать';
   $('#selCount').textContent = selecting ? (selected.size ? 'Выбрано: '+selected.size : 'Выберите фото') : '';
   ['#aDelete','#aMore','#aSave','#aFav'].forEach(s => $(s).disabled = !selected.size);
   const allFav = selected.size && [...selected].every(id => (photos.find(p=>p.id===id)||{}).fav);
-  $('#aFav').setAttribute('aria-pressed', !!allFav);
+  $('#aFav').setAttribute('aria-pressed', !!allFav); if (!$('#snack').hidden && !$('#album').hidden) placeSnack();
 }
-function openAlbum(){ selecting=false; selected.clear(); renderAlbum(); $('#album').hidden=false; const c=$('#agrid .cell.cur'); c && c.scrollIntoView({block:'center'}); }
-function closeAlbum(){ $('#album').hidden=true; sdrag=null; }
+function openAlbum(){ requestAnimationFrame(()=>{ if (!$('#snack').hidden) placeSnack(); }); selecting=false; selected.clear(); renderAlbum(); $('#album').hidden=false; const c=$('#agrid .cell.cur'); c && c.scrollIntoView({block:'center'}); }
+function closeAlbum(){ $('#album').hidden=true; if (!$('#snack').hidden) placeSnack(); sdrag=null; }
 $('#openAlbum').onclick = openAlbum;
 $('#albumCam').onclick = () => { closeAlbum(); openCam(); };
-$('#albumCancel').onclick = () => { selecting=false; selected.clear(); renderAlbum(); };
-$('#albumSelect').onclick = () => { selecting=!selecting; selected.clear(); renderAlbum(); if (selecting) toast('Проведите пальцем по фото — выберутся все подряд', 2200); };
+$('#albumSelect').onclick = () => { selecting=!selecting; selected.clear(); renderAlbum(); if (selecting){ let seen=0; try{ seen=+localStorage.getItem('phy_selhint')||0; }catch(_){} if (seen<2){ toast('Проведите пальцем по фото — выберутся все подряд', 2400); try{ localStorage.setItem('phy_selhint', seen+1); }catch(_){} } } };
 document.querySelectorAll('#aseg button').forEach(b => b.onclick = () => { albumFilter=b.dataset.f; selected.clear(); renderAlbum(); $('#agrid').scrollTop=0; });
 $('#aMore').onclick = () => sheet({title:`Выбрано: ${selected.size}`, actions:[{label:'Применить текущие настройки', run:applySel}]});
 const applySel = () => { const src={...P()}; delete src.fx; delete src.fy; let n=0;
   photos.forEach(p => { if (selected.has(p.id) && p!==item()){ p.P={...p.P, ...src}; persist(p); n++; } });
-  toast(`Текущие настройки применены к ${n} фото`); selecting=false; selected.clear(); renderAlbum(); };
+  selecting=false; selected.clear(); renderAlbum(); };
 $('#aSave').onclick = () => { const list = photos.filter(p=>selected.has(p.id)); selecting=false; selected.clear(); renderAlbum(); closeAlbum(); processAndOffer(list); };
 $('#aFav').onclick = () => { const list = photos.filter(p=>selected.has(p.id)); const on = !list.every(p=>p.fav);
-  list.forEach(p => { p.fav=on; persist(p); }); toast(on ? `В избранном: ${list.length}` : 'Убрано из избранного', 1400); selecting=false; selected.clear(); renderAlbum(); updateViewerInfo(); };
+  list.forEach(p => { p.fav=on; persist(p); }); selecting=false; selected.clear(); renderAlbum(); updateViewerInfo(); };
 
 /* drag across thumbnails to select a run of photos (like Photos on iPhone); hold near the top/bottom edge to scroll */
 let sdrag = null, sdragT = 0;
@@ -386,15 +406,27 @@ function selRange(i){ const lo=Math.min(sdrag.si,i), hi=Math.max(sdrag.si,i); se
 function selScroll(){ if (!sdrag){ clearInterval(sdragT); return; } const r = agEl.getBoundingClientRect(), bot = r.bottom-130, top = r.top+50;
   const v = sdrag.y>bot ? Math.min(24,(sdrag.y-bot)/3) : sdrag.y<top ? -Math.min(24,(top-sdrag.y)/3) : 0;
   if (v){ agEl.scrollTop += v; selHit(); } }
-$('#aDelete').onclick = () => { const ids=new Set(selected); if(!ids.size) return;
-  sheet({title:`Удалить ${ids.size} фото из альбома?`, text:'В «Фото» на iPhone ничего не удалится.', actions:[{label:'Удалить', red:true, run:()=>deleteIds(ids)}]}); };
+$('#aDelete').onclick = () => { const ids=new Set(selected); if(!ids.size) return; deleteIds(ids); };
+/* delete right away, keep the photos for 5 s so "Вернуть" can bring them back; the database is changed afterwards */
+let pendingDel = null;
+function commitDel(){ const d=pendingDel; if (!d) return; pendingDel=null; clearTimeout(d.t);
+  for (const {p} of d.items){ DB.del(p.id).catch(()=>{}); if (p.thumbURL){ URL.revokeObjectURL(p.thumbURL); p.thumbURL=null; } } }
 async function deleteIds(ids){
+  commitDel();
   const curId = cur>=0&&photos[cur]?photos[cur].id:null, oldCur=cur;
-  for (const id of ids){ await DB.del(id).catch(()=>{}); const p=photos.find(x=>x.id===id); if(p&&p.thumbURL) URL.revokeObjectURL(p.thumbURL); }
+  const items = photos.map((p,i)=>({p,i})).filter(x=>ids.has(x.p.id)); if (!items.length) return;
   photos = photos.filter(p=>!ids.has(p.id)); selected.clear(); selecting=false; updateCount();
+  pendingDel = {items, curId, t:setTimeout(commitDel, 6000)};
   const ni = photos.findIndex(p=>p.id===curId);
   if (ni>=0) cur=ni; else if (photos.length) await select(Math.min(Math.max(0,oldCur), photos.length-1), 'view'); else { cur=-1; useImage(sampleImg); setMode('view'); }
-  renderAlbum(); }
+  if (!$('#album').hidden) renderAlbum();
+  snack({text: items.length>1 ? `Удалено фото: ${items.length}` : 'Фото удалено', action:'Вернуть', run:undoDel, ms:5500}); }
+async function undoDel(){ const d=pendingDel; if (!d) return; pendingDel=null; clearTimeout(d.t);
+  d.items.sort((x,y)=>x.i-y.i).forEach(({p,i}) => photos.splice(Math.min(i, photos.length), 0, p)); updateCount();
+  const back = photos.findIndex(p=>p.id===(d.curId && d.items.some(x=>x.p.id===d.curId) ? d.curId : d.items[0].p.id));
+  if (!$('#album').hidden) renderAlbum(); else if (back>=0) await select(back, 'view'); }
+window.addEventListener('pagehide', commitDel);
+document.addEventListener('visibilitychange', () => { if (document.hidden) commitDel(); });
 
 /* ================= viewer / editor modes ================= */
 let editBackup = null;
@@ -402,7 +434,8 @@ function setMode(m){
   mode = m; const b=document.body; b.classList.toggle('cam', m==='cam'); b.classList.toggle('view', m==='view'); b.classList.toggle('edit', m==='edit');
   const cam=m==='cam', view=m==='view', edit=m==='edit';
   $('#openCam').hidden = !view; $('#closeCam').hidden = !cam; $('#cancelEdit').hidden = !edit;
-  $('#openAlbum').hidden = true; $('#camToggles').hidden = !cam; $('#vinfo').hidden = !view;
+  $('#openAlbum').hidden = true; $('#camToggles').hidden = !cam; $('#vinfo').hidden = !view; if (!view){ b.classList.remove('bare'); clearTimeout(bareT); }
+  paintCamStat(); if (!$('#snack').hidden) requestAnimationFrame(placeSnack);
   if (!view){ vz=1; vpx=0; vpy=0; $('#view').style.transform=''; }
   $('#editBtn').hidden = !view; $('#doneEdit').hidden = !edit; $('#flipCam').style.visibility = multiCam ? '' : 'hidden';
   $('#tgAdj').setAttribute('aria-pressed', adjOpen); $('#tgDate').setAttribute('aria-pressed', !!P().date); $('#tgFlash').setAttribute('aria-pressed', P().flash>.02);
@@ -416,15 +449,29 @@ function updateViewerInfo(){ if (mode!=='view') return; const it = cur>=0?photos
   if (!it){ $('#vDate').textContent='Пример'; $('#vMeta').textContent='Свайп вниз — альбом'; return; }
   const d=new Date(it.taken||it.date); $('#vDate').textContent = d.toLocaleDateString('ru-RU',{day:'numeric',month:'long'})+', '+d.toLocaleTimeString('ru-RU',{hour:'2-digit',minute:'2-digit'});
   const pr = PRESETS.find(x=>x.id===it.P.preset); $('#vMeta').textContent = `${cur+1} из ${photos.length}` + (pr?' · '+pr.name:'') + (it.saved===false?' · не в Фото':''); }
-$('#vFav').onclick = () => { if (cur<0) return; const it=photos[cur]; it.fav=!it.fav; persist(it); updateViewerInfo(); toast(it.fav?'В избранном':'Убрано из избранного', 1000); };
+$('#vFav').onclick = () => { if (cur<0) return; const it=photos[cur]; it.fav=!it.fav; persist(it); updateViewerInfo(); pop($('#vFav')); };
 $('#editBtn').onclick = () => { editBackup = {P:JSON.parse(JSON.stringify(P())), crop:{...crop()}}; setMode('edit'); };
 $('#doneEdit').onclick = () => { persist(item()); editBackup=null; setMode('view'); };
 $('#cancelEdit').onclick = () => { if (editBackup){ item().P = editBackup.P; item().crop = editBackup.crop; persist(item()); } editBackup=null; setMode('view'); };
-$('#vDel').onclick = () => { if (cur<0) return; const id=photos[cur].id; sheet({title:'Удалить это фото?', text:'Из альбома приложения. В «Фото» на iPhone ничего не удалится.', actions:[{label:'Удалить фото', red:true, run:()=>deleteIds(new Set([id]))}]}); };
+$('#vDel').onclick = () => { if (cur<0) return; deleteIds(new Set([photos[cur].id])); };
 $('#vShare').onclick = () => processAndOffer([item()]);
 $('#vRot').onclick = async () => { if (cur<0) return; const it=photos[cur]; it.crop.rot=(it.crop.rot+3)%4; it.crop.ox=0; it.crop.oy=0; persist(it); requestRender();
   if (loadedImg){ await setThumb(it, await makeThumb(loadedImg, it.crop.rot)); if (it.thumbURL) URL.revokeObjectURL(it.thumbURL); it.thumbURL=null; persist(it); } };
-function stepPhoto(dir){ if (photos.length<2) return; const n = (want>=0?want:cur)+dir; if (n<0||n>=photos.length){ toast(dir>0?'Это последнее фото':'Это первое фото',1000); return; } select(n,'view'); }
+const sleep = ms => new Promise(r=>setTimeout(r,ms));
+function bounce(dir){ view.style.transition='transform .12s ease-out'; view.style.transform=`translateX(${-dir*28}px)`; view.style.opacity='';
+  setTimeout(()=>{ view.style.transition='transform .25s cubic-bezier(.3,1.4,.5,1)'; view.style.transform=''; }, 120); }
+let slideSeq = 0;
+async function stepPhoto(dir){ const base=(want>=0?want:cur), n=base+dir;
+  if (photos.length<2 || n<0 || n>=photos.length){ bounce(dir); return; }
+  const seq=++slideSeq, W=stageEl.clientWidth; want=n;
+  view.style.transition='transform .16s ease-in, opacity .16s'; view.style.transform=`translateX(${-dir*W*.45}px)`; view.style.opacity='0';
+  await Promise.all([sleep(160), getView(photos[n]).catch(()=>{})]);
+  const ok = await select(n,'view');
+  if (seq!==slideSeq && ok) return;
+  view.style.transition='none'; view.style.transform = ok ? `translateX(${dir*W*.3}px)` : ''; view.style.opacity = ok ? '0' : '';
+  void view.offsetWidth; view.style.transition='transform .22s ease-out, opacity .22s'; view.style.transform=''; view.style.opacity=''; }
+let bareT = 0;
+const toggleBare = () => { clearTimeout(bareT); bareT = setTimeout(() => document.body.classList.toggle('bare'), 330); };
 
 /* ================= rendering ================= */
 let raf = 0, lastGeom = null, liveFrame = 0;
@@ -482,7 +529,10 @@ stageEl.addEventListener('pointermove', e => { if (!ptrs.has(e.pointerId)) retur
   if (!down) return; const dx=e.clientX-down.x, dy=e.clientY-down.y;
   if (Math.hypot(e.clientX-down.x0, e.clientY-down.y0)>8) { down.moved = true; clearTimeout(holdT); }
   if (down.z){ if (down.moved && !down.held){ vpx = down.px0+(e.clientX-down.x0); vpy = down.py0+(e.clientY-down.y0); viewXform(false); } return; }
-  if (mode==='view' && down.moved && !down.held && (down.vDrag || (e.clientY-down.y0>12 && e.clientY-down.y0>Math.abs(e.clientX-down.x0)*1.3))){
+  if (mode==='view' && down.moved && !down.held && !down.vDrag && (down.hDrag || (Math.abs(e.clientX-down.x0)>12 && Math.abs(e.clientX-down.x0)>Math.abs(e.clientY-down.y0)*1.3))){
+    down.hDrag = true; let dx0=e.clientX-down.x0; const n=cur+(dx0<0?1:-1); if (n<0||n>=photos.length) dx0*=.3;
+    view.style.transition='none'; view.style.transform=`translateX(${dx0}px)`; return; }
+  if (mode==='view' && down.moved && !down.held && !down.hDrag && (down.vDrag || (e.clientY-down.y0>12 && e.clientY-down.y0>Math.abs(e.clientX-down.x0)*1.3))){
     down.vDrag = true; const d=Math.max(0,e.clientY-down.y0); view.style.transition='none'; view.style.transform=`translateY(${d}px) scale(${1-Math.min(.25,d/1600)})`; view.style.opacity=String(1-Math.min(.5,d/700)); return; }
   if (mode==='cam' && !tapShoot && down.moved && (down.evDrag || Math.abs(e.clientY-down.y0)>Math.abs(e.clientX-down.x0)*1.3)){
     down.evDrag = true; setExpo(down.ev0 - (e.clientY-down.y0)/170, expoAt||{x:down.x0,y:down.y0}); return; }
@@ -493,16 +543,19 @@ function endPointer(e){ ptrs.delete(e.pointerId);
   if (pinch){ if (ptrs.size<2){ const pv=pinch.view; pinch=null; if (pv){ if (vz<1.08) resetZoom(true); else zoomRender(); } else setZoom(zoomLevel, true); } return; }
   clearTimeout(holdT); if (!down) return; const d=down; down=null;
   if (d.held){ compare=false; $('#badge').hidden=true; updateMarker(); requestRender(); return; }
+  if (d.hDrag){ const dx=e.clientX-d.x0, W=stageEl.clientWidth, fast=Math.abs(dx)>40 && Date.now()-d.t<350;
+    if (e.type==='pointerup' && (Math.abs(dx)>W*.22 || fast)) stepPhoto(dx<0?1:-1);
+    else { view.style.transition='transform .22s ease-out'; view.style.transform=''; } return; }
   if (d.vDrag){ const dy=e.clientY-d.y0, fast=dy>40 && Date.now()-d.t<350;
     view.style.transition='transform .2s, opacity .2s'; view.style.transform=''; view.style.opacity='';
     if (e.type==='pointerup' && (dy>110 || fast)) openAlbum(); return; }
   if (e.type!=='pointerup' || d.evDrag) return;
-  if (d.z){ if (!d.moved){ const now=Date.now(); if (now-lastTapT<320){ lastTapT=0; resetZoom(true); } else lastTapT=now; } return; }
+  if (d.z){ if (!d.moved){ const now=Date.now(); if (now-lastTapT<320){ lastTapT=0; clearTimeout(bareT); resetZoom(true); } else { lastTapT=now; toggleBare(); } } return; }
   const dx=e.clientX-d.x0, dy=e.clientY-d.y0, cropMode = tab==='crop' && mode==='edit';
   if (!cropMode && Math.abs(dx)>50 && Math.abs(dx)>Math.abs(dy)*1.5 && Date.now()-d.t<700){ if (mode==='view') stepPhoto(dx<0?1:-1); else stepFilter(dx<0?1:-1); return; }
   if (d.moved || cropMode) return;
   if (mode==='view'){ const sr=stageEl.getBoundingClientRect(), fx=(e.clientX-sr.left)/sr.width; if (fx<.25) stepPhoto(-1); else if (fx>.75) stepPhoto(1);
-    else { const now=Date.now(); if (now-lastTapT<320 && cur>=0){ lastTapT=0; const m=stageMid(e.clientX,e.clientY); zoomAt(2.5, m.x, m.y, 1, 0, 0, true); zoomRender(); } else lastTapT=now; } return; }
+    else { const now=Date.now(); if (now-lastTapT<320 && cur>=0){ lastTapT=0; clearTimeout(bareT); const m=stageMid(e.clientX,e.clientY); zoomAt(2.5, m.x, m.y, 1, 0, 0, true); zoomRender(); } else { lastTapT=now; toggleBare(); } } return; }
   if (mode==='cam' && tapShoot){ shoot(); return; }
   if (mode==='cam'){ const sr=stageEl.getBoundingClientRect(); expoAt={x:e.clientX,y:e.clientY}; setExpo(0, expoAt); }
   if (mode!=='view' && P().flash>.02){ const r=view.getBoundingClientRect(); let x=(e.clientX-r.left)/r.width; if(view.classList.contains('mirror')) x=1-x;
@@ -521,7 +574,7 @@ try { const s = JSON.parse(localStorage.getItem('myl_cam')||'{}'); tapShoot=!!s.
 const saveCamPrefs = () => { try { localStorage.setItem('myl_cam', JSON.stringify({tap:tapShoot, timer:timerSec, grid:gridOn})); } catch(_){} };
 /* exposure: tap a point, drag up/down — like the sun slider in the iPhone camera */
 function setExpo(v, at){
-  camExpo = Math.max(-2, Math.min(2, Math.round(v*20)/20));
+  camExpo = Math.max(-2, Math.min(2, Math.round(v*20)/20)); paintCamStat();
   if (hwExpo){ const hv=Math.max(hwExpo.min, Math.min(hwExpo.max, camExpo)); track().applyConstraints({advanced:[{exposureCompensation:hv}]}).catch(()=>{}); }
   const el=$('#expo'); if (at){ const sr=stageEl.getBoundingClientRect(); el.style.left=(at.x-sr.left)+'px'; el.style.top=(at.y-sr.top)+'px'; }
   $('#expoV').textContent = (camExpo>0?'+':camExpo<0?'−':'')+Math.abs(camExpo).toFixed(1).replace('.',',');
@@ -589,17 +642,26 @@ async function setZoom(z, commit){
 const hasRVFC = 'requestVideoFrameCallback' in HTMLVideoElement.prototype; let slowMs = 0;
 function camLoop(){ if (mode!=='cam' || camPaused) { camRaf=0; return; }
   let dt = 0;
-  if (video.currentTime!==lastVT){ lastVT=video.currentTime; lastFrameT=performance.now(); }
+  if (video.currentTime!==lastVT){ lastVT=video.currentTime; lastFrameT=performance.now(); if (camWaitOn) camWait(false); }
   if (video.readyState>=2 && !ctxLost){ const t0=performance.now(); E.setSource(video,{live:true}); liveFrame++; draw(); if (liveFrame%10===0){ E.gl.finish(); slowMs=performance.now()-t0; } dt=Math.max(performance.now()-t0, slowMs); }
   const wait = Math.max(dt>24 ? Math.min(400, dt*1.4) : 0, 1000/30 - dt);   // cap at ~30 fps to keep the phone cool
   const next = () => setTimeout(camLoop, Math.max(0,wait));
   camRaf = 1; if (hasRVFC) video.requestVideoFrameCallback(next); else requestAnimationFrame(next); }
-function pauseCam(){ camPaused = true; const t=track(); if (t) t.enabled = false; }
+/* status line in the viewfinder: what is switched on right now */
+function paintCamStat(){ const el=$('#camStat'); if (!el) return; if (mode!=='cam'){ el.hidden=true; return; }
+  const s=[]; if (P().date) s.push('ДАТА'); if (P().flash>.02) s.push('ВСПЫШКА'); if (timerSec) s.push('ТАЙМЕР '+timerSec+'С'); if (tapShoot) s.push('КАСАНИЕ');
+  if (camExpo) s.push('EV '+(camExpo>0?'+':'−')+Math.abs(camExpo).toFixed(1).replace('.',','));
+  el.textContent = s.join(' · '); el.hidden = !s.length; }
+let camWaitOn = false;
+function camWait(on, text){ camWaitOn=on; const el=$('#camWait'); el.hidden=!on; if (text) $('#camWaitT').textContent=text; }
+async function restartCam(){ camWait(true, 'Камера перезапускается…'); try { await startStream(); buildZoomChips(); setZoom(zoomLevel,false); lastFrameT=performance.now(); camPaused=false; if (!camRaf) camLoop(); }
+  catch(e){ camWait(true, 'Камера не отвечает'); } }
+function pauseCam(){ camPaused = true; const t=track(); if (t) t.enabled = false; if (camWaitOn) camWait(false); }
 /* watchdog: if the camera stops delivering frames, wake it up, then restart it */
 setInterval(async () => { if (mode!=='cam' || camPaused || document.hidden || !stream) return;
   const idle = performance.now()-lastFrameT;
-  if (idle>2500 && idle<6000){ try { await video.play(); } catch(_){} }
-  else if (idle>=6000){ lastFrameT=performance.now(); try { await startStream(); buildZoomChips(); if(!camRaf) camLoop(); } catch(_){ } }
+  if (idle>2500 && idle<6000){ camWait(true, 'Камера просыпается…'); try { await video.play(); } catch(_){} }
+  else if (idle>=6000){ lastFrameT=performance.now(); await restartCam(); }
 }, 1500);
 async function openCam(){
   if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia){ toast('Камера недоступна в этом браузере. Добавьте фото из галереи через альбом.'); return; }
@@ -617,13 +679,14 @@ async function closeCam(){
   if (mode==='cam'){ setMode('view'); useImage(cur>=0 && loadedImg ? loadedImg : sampleImg); }
 }
 $('#openCam').onclick = openCam;
+$('#camWaitBtn').onclick = restartCam;
 $('#closeCam').onclick = () => closeCam();
 $('#flipCam').onclick = async () => { if (zoomBusy) return; facing = facing==='environment' ? 'user' : 'environment'; lensId=null; zoomLevel=1; digitalZoom=1; try{ await startStream(); buildZoomChips(); setZoom(1,false); }catch(e){ toast('Не удалось сменить камеру.'); } };
-$('#tgAdj').onclick = () => { adjOpen=!adjOpen; setMode('cam'); if (adjOpen) toast('Настройки кадра: выберите параметр и крутите шкалу', 1600); };
-$('#tgDate').onclick = () => { P().date = P().date?0:1; setMode('cam'); toast(P().date?'Дата в углу включена':'Дата выключена', 1200); };
-$('#tgFlash').onclick = () => { P().flash = P().flash>.02 ? 0 : .75; if (P().flash){ P().fx=.5; P().fy=.48; } P().preset=null; setMode('cam'); toast(P().flash?'Вспышка включена':'Вспышка выключена', 1200); };
-$('#tgTap').onclick = () => { tapShoot=!tapShoot; saveCamPrefs(); setMode('cam'); toast(tapShoot?'Снимок по касанию кадра':'Касание кадра наводит вспышку', 1500); };
-$('#tgTimer').onclick = () => { timerSec = timerSec===0?3:timerSec===3?10:0; saveCamPrefs(); setMode('cam'); toast(timerSec?'Таймер '+timerSec+' с':'Таймер выключен', 1200); };
+$('#tgAdj').onclick = () => { adjOpen=!adjOpen; setMode('cam'); pop($('#tgAdj')); };
+$('#tgDate').onclick = () => { P().date = P().date?0:1; setMode('cam'); pop($('#tgDate')); };
+$('#tgFlash').onclick = () => { P().flash = P().flash>.02 ? 0 : .75; if (P().flash){ P().fx=.5; P().fy=.48; } P().preset=null; setMode('cam'); pop($('#tgFlash')); };
+$('#tgTap').onclick = () => { tapShoot=!tapShoot; saveCamPrefs(); setMode('cam'); pop($('#tgTap')); };
+$('#tgTimer').onclick = () => { timerSec = timerSec===0?3:timerSec===3?10:0; saveCamPrefs(); setMode('cam'); pop($('#tgTimer')); };
 document.addEventListener('visibilitychange', () => { if (mode!=='cam' || document.hidden) return; lastFrameT=performance.now();
   if (!streamAlive()) startStream().then(()=>{ buildZoomChips(); if(!camRaf) camLoop(); }).catch(()=>{}); else { video.play().catch(()=>{}); if(!camRaf) camLoop(); } });
 $('#tgGrid').onclick = () => { gridOn=!gridOn; saveCamPrefs(); setMode('cam'); };
@@ -686,27 +749,29 @@ function sheet({title, text, actions, progress}){
 }
 function closeSheet(){ $('#sheet').hidden=true; }
 $('#sheetCancel').onclick = closeSheet;
+$('#snBtn').onclick = () => { const r=snackRun; if (r) r(); };
 $('#sheet').addEventListener('click', e => { if (e.target.id==='sheet' && !$('#sheetCancel').hidden) closeSheet(); });
-async function processAndOffer(list){
-  if (!list.length) return;
-  sheet({title:'Обрабатываю в полном размере…', progress:true});
-  const out=[], done=[]; const keepImg = mode==='cam' ? null : loadedImg; const wasCam = mode==='cam' && !camPaused; if (wasCam) camPaused = true;
-  for (let i=0;i<list.length;i++){ const it=list[i];
-    const msg=$('#sheetMain .msg'); if (msg) msg.innerHTML = `<b>Обрабатываю в полном размере…</b>${i+1} из ${list.length}`; const pg=$('#prog'); if(pg) pg.style.width=(i/list.length*100)+'%';
+/* saving runs in the background: progress in the snackbar, then one tap opens the share menu (iOS needs that tap) */
+let saveQ = Promise.resolve();
+function processAndOffer(list){ list = (list||[]).filter(Boolean); if (!list.length) return saveQ; saveQ = saveQ.then(() => runSave(list)).catch(()=>{}); return saveQ; }
+async function runSave(list){
+  document.body.classList.add('saving');
+  const out=[], done=[], n=list.length;
+  for (let i=0;i<n;i++){ const it=list[i];
+    snack({text: n>1 ? `Обрабатываю ${i+1} из ${n}…` : 'Обрабатываю в полном размере…', progress:i/n});
     await frame(); await tick();
     try { const img = it===sample ? sampleImg : await decodeItem(it); E.setSource(img);   // always the full-size original
       const r = exportWith(it); out.push({name:outName(it), bytes:r.bytes, W:r.W, H:r.H}); done.push(it); if (img!==loadedImg && img!==sampleImg) img.close && img.close(); }
-    catch(e){ toast('Не удалось обработать '+it.name); } }
-  if (keepImg){ E.setSource(keepImg); requestRender(); }
-  if (wasCam){ camPaused = false; if (!camRaf) camLoop(); }
-  if (!out.length){ closeSheet(); return; }
-  const mb = out.reduce((s,f)=>s+f.bytes.length,0)/1048576, one = out.length===1 ? `${out[0].W}×${out[0].H}, ` : '';
-  sheet({title: out.length===1 ? 'Фото готово' : `Готово: ${out.length} фото`, text: `${one}${fmt1(mb)} МБ, JPEG 95%. Затем в меню нажмите «Сохранить изображение».`,
-    actions:[{label: out.length===1 ? 'Сохранить в Фото' : `Сохранить ${out.length} фото`, bold:true, run:async()=>{ if (await shareFiles(out)){ done.forEach(p => { if (p.saved!==true && p.id){ p.saved=true; persist(p); } }); updateViewerInfo(); if (!$('#album').hidden) renderAlbum(); } }},
-             {label:'Запомнить настройки как пресет', run:savePresetFromCurrent}]});
+    catch(e){ toast('Не удалось обработать '+(it.name||'фото')); }
+    if (mode!=='cam' && loadedImg){ E.setSource(loadedImg); requestRender(); } }
+  document.body.classList.remove('saving');
+  if (!out.length){ snack(null); return; }
+  const mb = out.reduce((s,f)=>s+f.bytes.length,0)/1048576;
+  snack({text: (out.length===1 ? 'Фото готово' : `Готово: ${out.length} фото`)+` · ${fmt1(mb)} МБ`, action:'В Фото', ms:20000,
+    run: async () => { snack(null); if (await shareFiles(out)){ done.forEach(p => { if (p.saved!==true && p.id){ p.saved=true; persist(p); } }); updateViewerInfo(); if (!$('#album').hidden) renderAlbum(); } }});
 }
 function savePresetFromCurrent(){ const list=loadMine(); const p={...P()}; delete p.fx; delete p.fy; delete p.preset; delete p.date;
-  const name='Мой '+(list.length+1); list.push({name, p}); saveMine(list); builtTab=null; refreshBottom(); toast('Пресет «'+name+'» добавлен в фильтры'); }
+  const name='Мой '+(list.length+1); list.push({name, p}); saveMine(list); builtTab=null; refreshBottom(); showName(name+' сохранён'); }
 
 /* ================= GPU context loss (iOS under memory pressure) ================= */
 let ctxLost = false, ctxT = 0;
