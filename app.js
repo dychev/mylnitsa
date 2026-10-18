@@ -351,7 +351,7 @@ const visiblePhotos = () => albumFilter==='fav' ? photos.filter(p=>p.fav) : albu
 function renderAlbum(){
   const g=$('#agrid'); g.innerHTML=''; g.classList.toggle('selecting', selecting);
   const list = visiblePhotos(); let lastDay = null;
-  const addCell = () => { const add=document.createElement('button'); add.type='button'; add.className='cell add'; add.innerHTML='<div><b>+</b>Из галереи</div>'; add.onclick=()=>$('#file').click(); g.appendChild(add); };
+  const addCell = () => {};   // v15: «Из галереи» lives in the bottom capsule
   if (!list.length && albumFilter==='all' && !selecting) addCell();
   list.forEach(p => { const i=photos.indexOf(p);
     const dk = dayKey(p.date); if (dk!==lastDay){ const hd=document.createElement('div'); hd.className='aday'; hd.textContent=dayLabel(p.date); g.appendChild(hd);
@@ -369,7 +369,7 @@ function renderAlbum(){
 }
 function paintSel(){
   $('#agrid').querySelectorAll('.cell[data-id]').forEach(b => { if (selecting) b.setAttribute('aria-pressed', selected.has(b.dataset.id)); else b.removeAttribute('aria-pressed'); });
-  $('#abar').hidden = !selecting; $('#albumCam').hidden = selecting; $('#selCount').hidden = !selecting; $('#aseg').hidden = selecting;
+  $('#abar').hidden = !selecting; $('#albumCam').hidden = selecting; $('#albumAdd').hidden = selecting; $('#selCount').hidden = !selecting; $('#aseg').hidden = selecting;
   $('#albumSelect').textContent = selecting ? 'Отмена' : 'Выбрать';
   $('#selCount').textContent = selecting ? (selected.size ? 'Выбрано: '+selected.size : 'Выберите фото') : '';
   ['#aDelete','#aMore','#aSave','#aFav'].forEach(s => $(s).disabled = !selected.size);
@@ -379,6 +379,7 @@ function paintSel(){
 function openAlbum(){ requestAnimationFrame(()=>{ if (!$('#snack').hidden) placeSnack(); }); selecting=false; selected.clear(); renderAlbum(); $('#album').hidden=false; const c=$('#agrid .cell.cur'); c && c.scrollIntoView({block:'center'}); }
 function closeAlbum(){ $('#album').hidden=true; if (!$('#snack').hidden) placeSnack(); sdrag=null; }
 $('#openAlbum').onclick = openAlbum;
+$('#albumAdd').onclick = () => $('#file').click();
 $('#albumCam').onclick = () => { closeAlbum(); openCam(); };
 $('#albumSelect').onclick = () => { selecting=!selecting; selected.clear(); renderAlbum(); if (selecting){ let seen=0; try{ seen=+localStorage.getItem('phy_selhint')||0; }catch(_){} if (seen<2){ toast('Проведите пальцем по фото — выберутся все подряд', 2400); try{ localStorage.setItem('phy_selhint', seen+1); }catch(_){} } } };
 document.querySelectorAll('#aseg button').forEach(b => b.onclick = () => { albumFilter=b.dataset.f; selected.clear(); renderAlbum(); $('#agrid').scrollTop=0; });
@@ -454,7 +455,7 @@ function setMode(m){
   $('#editBtn').hidden = !view; $('#doneEdit').hidden = !edit; $('#flipCam').style.visibility = multiCam ? '' : 'hidden';
   $('#tgAdj').setAttribute('aria-pressed', adjOpen); $('#tgDate').setAttribute('aria-pressed', !!P().date); $('#tgFlash').setAttribute('aria-pressed', P().flash>.02);
   $('#tgTap').setAttribute('aria-pressed', tapShoot); $('#tgTimer').setAttribute('aria-pressed', timerSec>0); $('#timerVal').textContent = timerSec?timerSec:'';
-  $('#lenses').hidden = !cam || !zoomChips.length;
+  $('#lenses').hidden = !cam || !zoomChips.length || adjOpen;
   $('#tgGrid').setAttribute('aria-pressed', gridOn); if (cam) $('#grid').hidden = !gridOn;
   updateCount(); updateViewerInfo(); builtTab=null; refreshBottom(); requestRender();
 }
@@ -622,7 +623,7 @@ function buildZoomChips(){
   if (facing==='user') zoomChips = [];
   const el=$('#lenses'); el.innerHTML=''; el.style.bottom='12px';
   zoomChips.forEach(z => { const b=document.createElement('button'); b.type='button'; b.dataset.z=z; b.onclick=()=>setZoom(z,true); el.appendChild(b); });
-  zoomRange = [minZ, maxZ]; paintZoom(); el.hidden = mode!=='cam' || !zoomChips.length;
+  zoomRange = [minZ, maxZ]; paintZoom(); el.hidden = mode!=='cam' || !zoomChips.length || adjOpen;
 }
 let zoomRange = [1,5];
 function fmtZ(z){ return (z<1? String(Math.round(z*10)/10).replace('0.','.') : (Math.round(z*10)/10).toString().replace('.',','))+'×'; }
