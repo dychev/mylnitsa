@@ -143,19 +143,33 @@ function Engine(canvas){
     const m=h/2, segs={a:hz(t/2), g:hz(m), d:hz(h-t/2), f:vt(t/2,0,m), b:vt(w-t/2,0,m), e:vt(t/2,m,h), c:vt(w-t/2,m,h)};
     for(const k of SEG[ch]||''){ const pts=segs[k]; g.beginPath(); g.moveTo(pts[0][0],pts[0][1]); for(const p of pts.slice(1)) g.lineTo(p[0],p[1]); g.closePath(); g.fill(); }
   }
-  function setStamp(text){
-    if(text===stamp.text) return; stamp.text=text;
+  function setStamp(text, style){
+    style = style==null ? 2 : style;
+    const key = text ? text+'|'+style : null;
+    if(key===stamp.text) return; stamp.text=key;
     if(!text){ return; }
-    const H=96, W=H*.52, T=H*.13, gap=H*.2, sp=H*.34;
-    let width=gap; for(const ch of text){ width += ch===' '?sp : ch==="'"?H*.18 : ch==='.'?H*.18 : W+gap*.55; }
-    const c=document.createElement('canvas'), pad=H*.6; c.width=Math.ceil(width+pad*2); c.height=Math.ceil(H+pad*2); const g=c.getContext('2d');
-    const paint=(blur,color,alpha)=>{ g.save(); g.shadowColor=color; g.shadowBlur=blur; g.globalAlpha=alpha; g.fillStyle=color; let x=pad;
-      for(const ch of text){ if(ch===' '){ x+=sp; continue; }
-        if(ch==="'"){ g.beginPath(); g.moveTo(x+H*.1,pad); g.lineTo(x+H*.16,pad); g.lineTo(x+H*.08,pad+H*.26); g.lineTo(x+H*.02,pad+H*.26); g.closePath(); g.fill(); x+=H*.18; continue; }
-        if(ch==='.'){ g.fillRect(x+H*.02,pad+H-T,T,T); x+=H*.18; continue; }
-        drawSeg(g,ch,x,pad,W,H,T); x+=W+gap*.55; }
-      g.restore(); };
-    paint(H*.28,'#ff3c00',.55); paint(H*.1,'#ff6a10',.8); paint(H*.025,'#ff9a3c',1); paint(0,'#ffc070',.55);
+    const H=96, pad=H*.6; let c, g;
+    if(style>=2){
+      // our monospace font: lime with a soft glow, or white with a thin shadow
+      const font=`600 ${Math.round(H*1.08)}px ui-monospace, "SF Mono", SFMono-Regular, Menlo, Consolas, monospace`;
+      c=document.createElement('canvas'); g=c.getContext('2d'); g.font=font; const tw=g.measureText(text).width;
+      c.width=Math.ceil(tw+pad*2); c.height=Math.ceil(H+pad*2); g=c.getContext('2d'); g.font=font; g.textBaseline='middle';
+      const paint=(blur,color,alpha)=>{ g.save(); g.shadowColor=color; g.shadowBlur=blur; g.globalAlpha=alpha; g.fillStyle=color; g.fillText(text,pad,pad+H/2); g.restore(); };
+      if(style===2){ paint(H*.3,'#b8ff00',.45); paint(H*.1,'#d4ff1a',.75); paint(H*.02,'#e0ff00',1); paint(0,'#f4ffb8',.45); }
+      else { paint(H*.14,'#000000',.55); paint(0,'#ffffff',.95); }
+    } else {
+      const W=H*.52, T=H*.13, gap=H*.2, sp=H*.34;
+      let width=gap; for(const ch of text){ width += ch===' '?sp : ch==="'"?H*.18 : ch==='.'?H*.18 : W+gap*.55; }
+      c=document.createElement('canvas'); c.width=Math.ceil(width+pad*2); c.height=Math.ceil(H+pad*2); g=c.getContext('2d');
+      const paint=(blur,color,alpha)=>{ g.save(); g.shadowColor=color; g.shadowBlur=blur; g.globalAlpha=alpha; g.fillStyle=color; let x=pad;
+        for(const ch of text){ if(ch===' '){ x+=sp; continue; }
+          if(ch==="'"){ g.beginPath(); g.moveTo(x+H*.1,pad); g.lineTo(x+H*.16,pad); g.lineTo(x+H*.08,pad+H*.26); g.lineTo(x+H*.02,pad+H*.26); g.closePath(); g.fill(); x+=H*.18; continue; }
+          if(ch==='.'){ g.fillRect(x+H*.02,pad+H-T,T,T); x+=H*.18; continue; }
+          drawSeg(g,ch,x,pad,W,H,T); x+=W+gap*.55; }
+        g.restore(); };
+      const C = style===1 ? ['#a8ff00','#c8ff10','#e0ff00','#f4ffa8'] : ['#ff3c00','#ff6a10','#ff9a3c','#ffc070'];
+      paint(H*.28,C[0],.55); paint(H*.1,C[1],.8); paint(H*.025,C[2],1); paint(0,C[3],.55);
+    }
     const id=g.getImageData(0,0,c.width,c.height), d=id.data; for(let i=0;i<d.length;i+=4){ const a=d[i+3]/255*0.9; d[i]=d[i]*a; d[i+1]=d[i+1]*a; d[i+2]=d[i+2]*a; d[i+3]=a*255; }
     if(!stamp.tex) stamp.tex=gl.createTexture();
     gl.bindTexture(gl.TEXTURE_2D,stamp.tex); gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL,true);

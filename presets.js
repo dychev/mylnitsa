@@ -1,5 +1,5 @@
 const BASE = {ev:0, temp:0, tint:0, ccd:.5, contrast:.12, blow:.12, flash:0, fsize:.5, fx:.5, fy:.45, vig:.12,
-  soft:.25, sharp:.35, ca:.2, iso:.15, chroma:.12, res:2048, sat:1, ir:0, bw:0, bands:null, strength:1, gtype:0, gsize:.3, pix:0, date:0};
+  soft:.25, sharp:.35, ca:.2, iso:.15, chroma:.12, res:2048, sat:1, ir:0, bw:0, bands:null, strength:1, gtype:0, gsize:.3, pix:0, date:0, dstyle:2};
 /* v4: everything 2–3× gentler on highlights, contrast and sharpening so bright daylight does not blow out */
 const PRESETS = [
   {id:'leica', name:'Leica ИК', p:{res:3936, gtype:1, gsize:.2, ir:1, ev:0, temp:.05, ccd:.3, sat:.92, contrast:.22, blow:.15, vig:.28, soft:.05, sharp:.4, ca:.1, iso:.1, chroma:.05}},

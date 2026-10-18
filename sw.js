@@ -1,6 +1,6 @@
 /* ph-y service worker: opens instantly from cache, updates in the background (works offline and on slow EDGE) */
-const CACHE='phy-v13';
-const CORE=['./','index.html','util.js?v=13','gl.js?v=13','presets.js?v=13','sample.js?v=13','app.js?v=13','manifest.webmanifest','icon-180.png','icon-192.png','icon-512.png'];
+const CACHE='phy-v14';
+const CORE=['./','index.html','util.js?v=14','gl.js?v=14','presets.js?v=14','sample.js?v=14','app.js?v=14','manifest.webmanifest','icon-180.png','icon-192.png','icon-512.png'];
 self.addEventListener('install',e=>{ e.waitUntil(caches.open(CACHE).then(c=>Promise.allSettled(CORE.map(u=>c.add(u))).then(()=>Promise.allSettled([c.add('heic2any.min.js')]))).then(()=>self.skipWaiting())); });
 self.addEventListener('activate',e=>{ e.waitUntil(caches.keys().then(ks=>Promise.all(ks.filter(k=>k!==CACHE).map(k=>caches.delete(k)))).then(()=>self.clients.claim())); });
 self.addEventListener('fetch',e=>{

@@ -147,8 +147,8 @@ body.view .vbar{display:grid;grid-template-columns:44px 44px 1fr 44px 44px;align
 #vFav[aria-pressed="true"] svg{fill:var(--red);stroke:var(--red)}
 .top .vinfo b{font-size:14px}
 .vinfo{text-align:center;display:grid;gap:2px}
-.vinfo b{font:600 14px var(--mono);letter-spacing:.02em}
-.vinfo span{font:500 11px var(--mono);color:var(--sec);letter-spacing:.04em;text-transform:uppercase}
+.vinfo b{font:600 15px var(--font)}
+.vinfo span{font:400 12px var(--font);color:var(--sec)}
 body.view .adjust, body.view .tabs{display:none}
 body:not(.view) .vbar{display:none}
 body.edit .tabs{display:grid}
@@ -219,6 +219,26 @@ body.saving #vShare, body.saving #aSave{animation:busy 1s ease-in-out infinite}
 .pop{animation:pop .28s ease-out}
 @keyframes pop{40%{transform:scale(1.22)}}
 @media (prefers-reduced-motion:reduce){.pop,body.saving #vShare{animation:none}}
+/* v14 */
+#vDate{font-style:normal}
+.vdot{display:inline-block;width:7px;height:7px;border-radius:50%;background:var(--acc);margin-right:7px;vertical-align:middle;position:relative;top:-1px}
+.aday{font:700 17px var(--font);letter-spacing:0;text-transform:none;color:var(--label);padding:16px 10px 8px}
+.seg button{font:600 13px var(--font);letter-spacing:0;text-transform:none}
+.it span{display:none} .it{gap:0}
+.cell .uns{width:6px;height:6px;right:7px;top:7px;box-shadow:none}
+.agrid{grid-template-columns:repeat(var(--cols,3),1fr)}
+.agrid.dense .cell .fav{width:12px;height:12px;left:3px;bottom:3px} .agrid.dense .cell .tick{width:18px;height:18px;right:3px;bottom:3px}
+.agrid.dense .cell.add b{font-size:22px} .agrid.dense .cell.add{font-size:0}
+/* album bottom: floating capsules in the style of the top switcher */
+.abot{background:linear-gradient(to top,rgba(0,0,0,.9),rgba(0,0,0,.6) 60%,rgba(0,0,0,0));-webkit-backdrop-filter:none;backdrop-filter:none;border-top:0;display:grid;justify-items:center;gap:8px;padding:28px 12px max(env(safe-area-inset-bottom,0px),14px);pointer-events:none}
+.abot .cap{pointer-events:auto;display:inline-flex;align-items:center;gap:2px;background:rgba(44,44,46,.92);-webkit-backdrop-filter:blur(20px);backdrop-filter:blur(20px);border-radius:12px;padding:3px;min-height:0;grid-template-columns:none}
+.abot .cap[hidden]{display:none}
+.abot .abar.cap{padding:3px 6px;gap:10px}
+.abot .abar.cap .ico{width:44px;height:40px}
+.abot .atool.cap .tbtn{height:36px;padding:0 16px;border-radius:9px;font-size:15px;font-weight:600;gap:7px}
+.abot .atool.cap .tbtn svg{width:20px;height:20px}
+.abot .atool.cap #albumCam{background:rgba(255,255,255,.1)}
+.abot .atool.cap #selCount{font:600 15px var(--font);letter-spacing:0;text-transform:none;padding:0 12px 0 14px;color:var(--label)}
 </style>
 </head>
 <body>
@@ -230,7 +250,7 @@ body.saving #vShare, body.saving #aSave{animation:busy 1s ease-in-out infinite}
     </div>
     <div class="c">
       <button class="pill" id="openAlbum" type="button"><svg viewBox="0 0 16 16" fill="currentColor" aria-hidden="true"><rect x="1" y="1" width="6" height="6" rx="1.2"/><rect x="9" y="1" width="6" height="6" rx="1.2"/><rect x="1" y="9" width="6" height="6" rx="1.2"/><rect x="9" y="9" width="6" height="6" rx="1.2"/></svg><span id="albumCount">Альбом</span></button>
-      <div class="vinfo" id="vinfo" hidden><b id="vDate"></b><span id="vMeta"></span></div>
+      <div class="vinfo" id="vinfo" hidden><b><i class="vdot" id="vDot" hidden></i><em id="vDate"></em></b><span id="vMeta"></span></div>
       <div id="camToggles" hidden style="display:flex;gap:6px">
         <button class="ico" id="tgDate" type="button" aria-label="Дата в углу" aria-pressed="false"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><rect x="3.5" y="5" width="17" height="15" rx="2.5"/><path d="M3.5 10h17M8 3v4M16 3v4"/></svg></button>
         <button class="ico" id="tgFlash" type="button" aria-label="Вспышка" aria-pressed="false"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round" aria-hidden="true"><path d="M13 2 5 13h6l-1 9 8-11h-6z"/></svg></button>
@@ -302,13 +322,13 @@ body.saving #vShare, body.saving #aSave{animation:busy 1s ease-in-out infinite}
   </header>
   <div class="agrid" id="agrid"></div>
   <div class="abot">
-    <div class="abar" id="abar" hidden>
+    <div class="abar cap" id="abar" hidden>
       <button type="button" class="ico" id="aSave" aria-label="Сохранить в Фото"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3v12M7.5 7.5 12 3l4.5 4.5"/><path d="M6 11H5a1.5 1.5 0 0 0-1.5 1.5v7A1.5 1.5 0 0 0 5 21h14a1.5 1.5 0 0 0 1.5-1.5v-7A1.5 1.5 0 0 0 19 11h-1"/></svg></button>
       <button type="button" class="ico" id="aFav" aria-label="Избранное"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 20.5s-7.5-4.6-7.5-10.2A4.3 4.3 0 0 1 12 7.6a4.3 4.3 0 0 1 7.5 2.7c0 5.6-7.5 10.2-7.5 10.2z"/></svg></button>
       <button type="button" class="ico" id="aMore" aria-label="Ещё"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="9"/><circle cx="8" cy="12" r=".6" fill="currentColor"/><circle cx="12" cy="12" r=".6" fill="currentColor"/><circle cx="16" cy="12" r=".6" fill="currentColor"/></svg></button>
       <button type="button" class="ico red" id="aDelete" aria-label="Удалить"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 6.5h16M9.5 6.5V4.5h5v2M6.5 6.5l1 13a1.5 1.5 0 0 0 1.5 1.4h6a1.5 1.5 0 0 0 1.5-1.4l1-13M10 10.5v6.5M14 10.5v6.5"/></svg></button>
     </div>
-    <div class="atool" id="atool">
+    <div class="atool cap" id="atool">
       <button class="tbtn" id="albumCam" type="button"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round" aria-hidden="true"><path d="M3 8.5A1.5 1.5 0 0 1 4.5 7h2.6l1.6-2.2h6.6L16.9 7h2.6A1.5 1.5 0 0 1 21 8.5v9A1.5 1.5 0 0 1 19.5 19h-15A1.5 1.5 0 0 1 3 17.5z"/><circle cx="12" cy="12.8" r="3.6"/></svg>Камера</button>
       <span id="selCount" hidden></span>
       <button class="tbtn y" id="albumSelect" type="button">Выбрать</button>
@@ -319,10 +339,10 @@ body.saving #vShare, body.saving #aSave{animation:busy 1s ease-in-out infinite}
 <div class="flashfx" id="flashfx"></div>
 <div class="sheet" id="sheet" hidden><div class="box"><div class="grp" id="sheetMain"></div><div class="grp"><button type="button" class="act bold" id="sheetCancel">Отмена</button></div></div></div>
 
-<script src="util.js?v=13"></script>
-<script src="gl.js?v=13"></script>
-<script src="presets.js?v=13"></script>
-<script src="sample.js?v=13"></script>
-<script src="app.js?v=13"></script>
+<script src="util.js?v=14"></script>
+<script src="gl.js?v=14"></script>
+<script src="presets.js?v=14"></script>
+<script src="sample.js?v=14"></script>
+<script src="app.js?v=14"></script>
 </body>
 </html>
